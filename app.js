@@ -1,8 +1,8 @@
 // Wochenteller – Hauptteil: Laden, Ansichten Heute/Woche/Einkauf/Mehr, Navigation, Login.
-import { sb, S, ACT, VIEWS, hooks, $, esc, fmt, q, all, put, flush, toast, buzz, status, DAYS, AREA, isoWeek, iso, todayISO, addDays, dayKey, monday, weekOf, dateLabel, relLabel,
-  portion, goals, trainDays, dayTimeline, val, weekRow } from "./core.js";
-import { closeSheet } from "./add.js";
-import { tendonCard } from "./training.js";
+import { sb, S, ACT, VIEWS, hooks, DEMO, $, esc, fmt, q, all, put, flush, toast, buzz, status, DAYS, AREA, isoWeek, iso, todayISO, addDays, dayKey, monday, weekOf, dateLabel, relLabel,
+  portion, goals, trainDays, dayTimeline, val, weekRow, addN, breakdown } from "./core.js";
+import { closeSheet, nutrTable } from "./add.js";
+import { tendonCard, SK } from "./training.js";
 import { weekReview, reviewCard } from "./trends.js";
 
 // ---------- Laden ----------
@@ -33,7 +33,7 @@ function ensureWeek(w) { return S.weeks[w] = S.weeks[w] || { woche: w, plan: {},
 async function saveWeek(w) { await put("wochen", "upsert", { woche: w.woche, plan: w.plan || {}, kantine_tag: w.kantine_tag || {} }); }
 
 // ---------- Heute ----------
-const gear = `<button class="icon" data-go="mehr" aria-label="Einstellungen und Vorrat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>`;
+const gear = `<button class="icon" data-go="menu" aria-label="Menü"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>`;
 const SLOTL = { frueh: "Früh", mittag: "Mittag", abend: "Abend", snack: "Snack" };
 
 VIEWS.heute = () => {
@@ -52,18 +52,21 @@ VIEWS.heute = () => {
       <div class="track ${k > g.kcal ? "over" : ""}"><i style="width:${Math.min(100, k / g.kcal * 100)}%"></i></div></div>
     <div class="meter"><div class="row"><b>Eiweiß</b><span class="muted"><b class="v">${fmt(p)}</b> / ${fmt(g.eiweiss)} g</span></div>
       <div class="track ice"><i style="width:${Math.min(100, p / g.eiweiss * 100)}%"></i></div></div>
+    ${(() => { let n = {}; tl.forEach(x => { n = addN(n, x.n || { kcal: x.k, eiweiss: x.p }); }); const g2 = (k, l, dd = 0) => `<span><b class="num">${n["_miss_" + k] && n[k] != null ? "≥" : ""}${n[k] == null ? "–" : fmt(n[k], dd)}</b> ${l}</span>`;
+      return `<div class="minis">${g2("kh", "g KH")}${g2("zucker", "g Zucker")}${g2("fett", "g Fett")}${g2("salz", "g Salz", 1)}</div>`; })()}
     <div class="seg chips">${train ? `<span class="chip">Trainingstag</span>` : `<span class="chip">Ruhetag</span>`}
-      <button class="chip ice" data-act="wasser-direkt" aria-label="250 ml Wasser eintragen">Wasser ${water ? fmt(water / 1000, 2) + " l" : "eintragen"} +</button>
+      <button class="chip ice" data-act="wasser-sheet">Wasser ${water ? fmt(water / 1000, 2) + " l" : "eintragen"}</button>
       ${cardio ? `<button class="chip gold" data-act="cardio">${esc(cardio.art || "Cardio")} ${fmt(cardio.minuten)} min · ~${fmt(cardio.kcal)} kcal</button>` : ""}
       <button class="chip" data-act="gewicht">${kg ? fmt(kg, 1) + " kg" : "Gewicht eintragen"}</button>
       ${open ? `<span class="chip gold">${open} Foto${open > 1 ? "s" : ""} wartet auf Schätzung</span>` : ""}</div></section>
   ${tendonCard(true) && train && isToday ? tendonCard(true) : ""}
   <div class="row" style="padding:4px 4px 0"><h2>${isToday ? "Dein Tag" : "Essen"}</h2><button class="small ghost" data-go="woche">Woche planen</button></div>
-  <div class="tl">${tl.length ? tl.map(x => { const tag = x.entry ? `button data-act="entry" data-id="${x.entry.id}"` : x.open ? `button data-act="kantine"` : "div";
-      return `<${tag} class="tli ${x.planned ? "plan" : ""} ${x.pending ? "pending" : ""} ${x.open ? "open" : ""}"><span class="slot">${SLOTL[x.slot] || ""}</span><span class="tm"><b>${esc(x.name)}</b><span class="muted">${esc(x.det)}</span></span><span class="tv"><b>${x.pending ? "?" : fmt(x.k)}</b> kcal<br>${x.pending ? "–" : fmt(x.p)} g</span></${tag.split(" ")[0]}>`; }).join("")
+  <div class="tl">${tl.length ? tl.map(x => { const tag = x.entry ? `button data-act="entry" data-id="${x.entry.id}"` : x.kantine ? `button data-act="kantine"` : x.recs ? `button data-act="detail" data-recs="${x.recs.join(",")}" data-date="${d}" data-time="${x.time || ""}"` : "div";
+      return `<${tag} class="tli ${x.planned ? "plan" : ""} ${x.pending ? "pending" : ""} ${x.open ? "open" : ""}"><span class="slot num">${esc(x.time || "")}</span><span class="tm"><b>${esc(x.name)}</b><span class="muted">${esc(x.det)}</span></span><span class="tv"><b>${x.pending ? "?" : fmt(x.k)}</b> kcal<br>${x.pending ? "–" : fmt(x.p)} g</span></${tag.split(" ")[0]}>`; }).join("")
     : `<div class="empty">Noch nichts eingetragen. Tippe unten auf „+“.</div>`}</div>
   ${rv}
   ${deal && isToday ? `<button class="radar" data-go="einkauf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12l-8 8-9-9V3h8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg><span><b>Radar:</b> ${esc(deal.produkt)} bei ${esc(deal.haendler)}${S.deals.length > 1 ? ` · +${S.deals.length - 1} weitere` : ""}</span></button>` : ""}
+  ${(() => { try { return isToday && localStorage.getItem(SK) ? `<button class="radar run" data-go="training"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M18 4v16M3 8v8M21 8v8M6 12h12"/></svg><span><b>Training läuft</b> – tippen zum Fortsetzen</span></button>` : ""; } catch (e) { return ""; } })()}
   ${train && plan && isToday && !done ? `<section class="card"><div class="row"><h2>Training</h2><span class="muted">${esc(plan.name)}</span></div>
     <div class="seg">${plan.tage.map((x, i) => `<button data-act="start" data-i="${i}" data-plan="${esc(plan.id)}">${esc(x.name)}</button>`).join("")}</div></section>` : ""}`;
 };
@@ -105,7 +108,7 @@ function needs() {
 }
 VIEWS.einkauf = () => {
   const { need, by } = needs(); const groups = {}, covered = [];
-  let checked = {}; try { checked = JSON.parse(localStorage.getItem("ek-" + S.week.woche) || "{}"); } catch (e) { }
+  let checked = {}; try { checked = JSON.parse(localStorage.getItem((DEMO ? "demo-" : "") + "ek-" + S.week.woche) || "{}"); } catch (e) { }
   Object.entries(need).forEach(([id, qty]) => { const i = S.ing[id]; if (!i) return; const miss = qty - (S.stock[id] || 0);
     if (miss <= 0.001) { covered.push(i.name); return; }
     const buy = i.packung ? `${Math.ceil(miss / i.packung - 1e-9)}× ${i.pack_name || fmt(i.packung) + " " + i.einheit}` : `${Math.ceil(miss - 1e-9)} ${i.einheit === "g" ? "g" : "Stk"}`;
@@ -123,27 +126,99 @@ ACT.eingekauft = async () => {
   const { need } = needs(); const rows = [];
   Object.entries(need).forEach(([id, qty]) => { const i = S.ing[id]; if (!i) return; const miss = qty - (S.stock[id] || 0); if (miss <= 0) return;
     const add = i.packung ? Math.ceil(miss / i.packung - 1e-9) * i.packung : Math.ceil(miss - 1e-9); S.stock[id] = (S.stock[id] || 0) + add; rows.push({ zutat_id: id, menge: S.stock[id] }); });
-  try { localStorage.removeItem("ek-" + S.week.woche); } catch (x) { }
+  try { localStorage.removeItem((DEMO ? "demo-" : "") + "ek-" + S.week.woche); } catch (x) { }
   render(); if (rows.length) await put("bestand", "upsert", rows); toast("Vorrat aufgefüllt");
 };
 
 // ---------- Mehr ----------
-VIEWS.mehr = () => { const g = goals(), photos = S.log.filter(e => e.foto_pfad && !e.foto_gesichert);
-  return `<section class="card"><h2>Ziele</h2><form id="ziele" class="grid2"><label>kcal pro Tag<input name="kcal" type="number" inputmode="numeric" value="${g.kcal}" min="1000" max="5000"></label><label>Eiweiß g pro Tag<input name="eiweiss" type="number" inputmode="numeric" value="${g.eiweiss}" min="40" max="300"></label><button style="grid-column:1/-1" class="ghost">Ziele speichern</button></form></section>
-  <section class="card"><h2>Essensfotos</h2><div class="muted" id="fotostat">${photos.length} Foto${photos.length === 1 ? "" : "s"} online · Speicher wird geprüft …</div>
+// ---------- Menü & Unterseiten ----------
+const IC = {
+  einkauf: '<path d="M4 6h2l2 10h10l2-7H7"/><circle cx="9" cy="20" r="1"/><circle cx="17" cy="20" r="1"/>',
+  woche: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  rezepte: '<path d="M4 5h11a3 3 0 0 1 3 3v12H7a3 3 0 0 1-3-3z"/><path d="M8 9h6M8 13h6"/>',
+  vorrat: '<path d="M4 7h16v13H4zM4 7l2-3h12l2 3M9 11h6"/>',
+  verlauf: '<path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4M12 8v4l3 2"/>',
+  messung: '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
+  geraete: '<path d="M6 4v16M18 4v16M3 8v8M21 8v8M6 12h12"/>',
+  fotos: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  daten: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
+  ziele: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".5"/>',
+  demo: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>',
+  logout: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/>'
+};
+const tile = (k, label, go, small = "", badge = 0) => `<button class="tile" ${go.startsWith("act:") ? `data-act="${go.slice(4)}"` : `data-go="${go}"`}>${badge ? `<span class="badge num">${badge}</span>` : ""}<svg viewBox="0 0 24 24" aria-hidden="true">${IC[k]}</svg>${label}${small ? `<small>${small}</small>` : ""}</button>`;
+VIEWS.menu = () => { const photos = S.log.filter(e => e.foto_pfad && !e.foto_gesichert).length;
+  return `<section class="card"><h2>Essen & Einkauf</h2><div class="tiles">
+    ${tile("einkauf", "Einkauf", "einkauf", "Liste & Angebote", S.deals.length)}${tile("woche", "Woche planen", "woche", "Abendessen & Kantine")}${tile("rezepte", "Rezepte", "rezepte", `${Object.keys(S.rec).length} gespeichert`)}
+    ${tile("vorrat", "Vorrat", "vorrat", "Kühlschrank & Lager")}${tile("fotos", "Essensfotos", "fotos", photos ? `${photos} online` : "")}${tile("verlauf", "Verlauf", "verlauf", "ansehen & löschen")}</div></section>
+  <section class="card"><h2>Körper & Training</h2><div class="tiles">
+    ${tile("messung", "Messwerte", "act:messung", "Bauch, Puls, Schlaf …")}${tile("geraete", "Geräte", "geraete", "Gewichtsstufen")}${tile("ziele", "Ziele", "ziele", "kcal, Eiweiß, Tage")}</div></section>
+  <section class="card"><h2>App</h2><div class="tiles">
+    ${tile("daten", "Daten", "daten", "Export & Import")}${DEMO ? tile("demo", "Demo zurücksetzen", "act:demo-reset", "frische Beispieldaten") : `<a class="tile" href="?demo" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true">${IC.demo}</svg>Demo<small>zum Ausprobieren</small></a>`}${tile("logout", "Abmelden", "act:logout")}</div>
+    <div class="muted">${DEMO ? "Demo-Version: Alle Daten bleiben nur in diesem Browser." : "Deine Daten liegen in deiner eigenen Supabase-Datenbank (Frankfurt)."}</div></section>`; };
+VIEWS.ziele = () => { const g = goals(), td = trainDays(), k = S.set.kantine || { kcal: 700, eiweiss: 25 };
+  return `<section class="card"><h2>Tagesziele</h2><form id="ziele" class="grid2"><label>kcal pro Tag<input name="kcal" type="number" inputmode="numeric" value="${g.kcal}" min="1000" max="5000"></label><label>Eiweiß g pro Tag<input name="eiweiss" type="number" inputmode="numeric" value="${g.eiweiss}" min="40" max="300"></label>
+    <fieldset class="days"><legend>Trainingstage</legend>${DAYS.map(([d, l]) => `<label class="check"><input type="checkbox" name="td" value="${d}" ${td.includes(d) ? "checked" : ""}>${l}</label>`).join("")}</fieldset>
+    <label>Kantine pauschal kcal<input name="kk" type="number" inputmode="numeric" value="${k.kcal}"></label><label>Kantine pauschal Eiweiß g<input name="kp" type="number" inputmode="numeric" value="${k.eiweiss}"></label>
+    <button style="grid-column:1/-1">Speichern</button></form></section>`; };
+VIEWS.rezepte = () => `<section class="card"><h2>Rezepte</h2>${Object.values(S.rec).map(r => { const [k, p] = portion(r.id), b = breakdown(r.id); return `<details><summary>${esc(r.name)} <span class="muted num">${fmt(k)} kcal · ${fmt(p)} g Eiweiß pro Portion</span></summary>${r.bild ? `<img class="shot" src="${esc(r.bild)}" alt="${esc(r.name)}" loading="lazy">` : ""}${nutrTable(b.rows, b.total)}<p class="muted">${r.portionen > 1 ? `Rezept ergibt ${r.portionen} Portionen. ` : ""}${esc(r.zubereitung || "")}</p></details>`; }).join("") || `<div class="muted">Keine Rezepte.</div>`}
+  <div class="muted">Neue Rezepte schickst du mir am einfachsten im Chat (Foto oder Text), ich trage sie mit Nährwerten ein.</div></section>`;
+VIEWS.vorrat = () => `<section class="card"><h2>Vorrat</h2><div class="grid2">${Object.entries(S.ing).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, i]) => `<label>${esc(i.name)}<input type="number" inputmode="decimal" data-stock="${esc(id)}" value="${S.stock[id] || 0}"><span class="muted">${i.einheit === "g" ? "g / ml" : "Stück"}</span></label>`).join("")}</div></section>`;
+VIEWS.geraete = () => `<section class="card"><h2>Geräte</h2><div class="muted">Stufe = um wie viel kg + und − im Training ändern. Start = Gewicht beim ersten Mal.</div>
+  ${Object.values(S.dev).sort((a, b) => a.name.localeCompare(b.name)).map(d => `<div class="devrow"><b>${esc(d.name)}</b>
+    <label>Stufe kg<input type="number" inputmode="decimal" step="0.5" min="0.5" data-dev="${esc(d.id)}" data-f="gewicht_schritt" value="${+d.gewicht_schritt || 1}"></label>
+    <label>Start kg<input type="number" inputmode="decimal" step="0.5" min="0" data-dev="${esc(d.id)}" data-f="gewicht_min" value="${+d.gewicht_min || 3}"></label>
+    <button class="del" data-act="dev-del" data-id="${esc(d.id)}" aria-label="${esc(d.name)} löschen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>`).join("") || `<div class="muted">Noch keine Geräte.</div>`}
+  <details><summary>+ Gerät hinzufügen</summary><form id="newdev" class="grid2" style="margin-top:8px"><label style="grid-column:1/-1">Name<input name="name" required></label><label>Stufe kg<input name="schritt" type="number" step="0.5" value="1"></label><label>Start kg<input name="min" type="number" step="0.5" value="3"></label><button style="grid-column:1/-1">Speichern</button></form></details></section>`;
+VIEWS.fotos = () => { const photos = S.log.filter(e => e.foto_pfad && !e.foto_gesichert);
+  return `<section class="card"><h2>Essensfotos</h2><div class="muted" id="fotostat">${photos.length} Foto${photos.length === 1 ? "" : "s"} online · Speicher wird geprüft …</div>
     <div class="muted">Fotos werden beim Hochladen auf ca. 150 KB verkleinert. 1 GB kostenloser Speicher reicht für mehrere tausend Fotos.</div>
     ${photos.length ? `<button class="ghost" data-act="fotos-zip">Alle Fotos herunterladen (ZIP)</button>` : ""}
-    ${S.zipped?.length ? `<button class="ghost danger" data-act="fotos-del">${S.zipped.length} gesicherte Fotos online löschen</button><div class="muted">Fotos, die noch auf eine Schätzung warten, bleiben online.</div>` : ""}</section>
-  <section class="card"><h2>Daten</h2>
+    ${S.zipped?.length ? `<button class="ghost danger" data-act="fotos-del">${S.zipped.length} gesicherte Fotos online löschen</button><div class="muted">Fotos, die noch auf eine Schätzung warten, bleiben online.</div>` : ""}</section>`; };
+VIEWS.daten = () => `<section class="card"><h2>Daten</h2>
     <div class="muted">Sichere regelmäßig alle Daten auf dein Gerät, etwa einmal im Monat. Der Export öffnet sich auch in Excel.</div>
     <button class="ghost" data-act="export">Alle Daten exportieren (ZIP)</button>
     <label class="btn ghost filebtn" for="imp-in">Gewicht aus anderer App importieren (CSV)</label><input id="imp-in" type="file" accept=".csv,.txt,text/csv,text/plain" hidden>
-    <div class="muted">Funktioniert mit Exporten aus Samsung Health, Google Fit, Waagen-Apps oder Excel: Jede Zeile braucht ein Datum und ein Gewicht in kg.</div></section>
-  <section class="card"><h2>Vorrat</h2><div class="grid2">${Object.entries(S.ing).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, i]) => `<label>${esc(i.name)}<input type="number" inputmode="decimal" data-stock="${esc(id)}" value="${S.stock[id] || 0}"><span class="muted">${i.einheit === "g" ? "g / ml" : "Stück"}</span></label>`).join("")}</div></section>
-  <section class="card"><h2>Rezepte</h2>${Object.values(S.rec).map(r => { const [k, p] = portion(r.id); return `<details><summary>${esc(r.name)} <span class="muted num">${fmt(k)} kcal · ${fmt(p)} g</span></summary><ul>${(r.zutaten || []).map(z => `<li>${fmt(z.menge, 2)} ${S.ing[z.id]?.einheit === "g" ? "g" : "×"} ${esc(S.ing[z.id]?.name || z.id)}</li>`).join("")}</ul><p class="muted">${esc(r.zubereitung || "")}</p></details>`; }).join("") || `<div class="muted">Keine Rezepte.</div>`}</section>
-  <section class="card"><h2>Geräte</h2>${Object.values(S.dev).map(d => `<div class="row"><span>${esc(d.name)}</span><span class="muted num">${fmt(d.gewicht_schritt, 1)} kg-Stufen</span></div>`).join("") || `<div class="muted">Noch keine Geräte.</div>`}
-    <details><summary>+ Gerät hinzufügen</summary><form id="newdev" class="grid2" style="margin-top:8px"><label style="grid-column:1/-1">Name<input name="name" required></label><label>Gewichtsstufe kg<input name="schritt" type="number" step="0.5" value="5"></label><label>Startgewicht kg<input name="min" type="number" step="0.5" value="0"></label><button style="grid-column:1/-1">Speichern</button></form></details></section>
-  <section class="card"><button class="ghost" data-act="logout">Abmelden</button><div class="muted">Daten liegen in deiner eigenen Supabase-Datenbank (Frankfurt).</div></section>`; };
+    <div class="muted">Funktioniert mit Exporten aus Samsung Health, Google Fit, Waagen-Apps oder Excel: Jede Zeile braucht ein Datum und ein Gewicht in kg.</div></section>`;
+
+// ---------- Verlauf: alles ansehen und löschen ----------
+const VF = [["alle", "Alles"], ["essen", "Essen"], ["gewicht", "Gewicht"], ["messung", "Messwerte"], ["cardio", "Cardio"], ["wasser", "Wasser"], ["training", "Training"]];
+const trash = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>`;
+function verlaufItems(d) {
+  const f = S.vf || "alle", on = k => f === "alle" || f === k, out = [], w = weekRow(d), kt = (w.kantine_tag || {})[dayKey(d)];
+  if (on("essen")) { S.log.filter(e => e.datum === d).forEach(e => out.push({ t: e.name, s: e.status === "offen" ? "Foto – Schätzung offen" : `${fmt(e.kcal)} kcal · ${fmt(e.eiweiss)} g`, open: `data-act="entry" data-id="${esc(e.id)}"`, del: `data-kind="e" data-id="${esc(e.id)}"` }));
+    if (kt?.kcal) out.push({ t: "Kantine", s: `${fmt(kt.kcal)} kcal · ${fmt(kt.eiweiss)} g${kt.notiz ? " · " + kt.notiz : ""}`, del: `data-kind="k" data-d="${d}"` }); }
+  S.vals.filter(v => v.datum === d && on(v.quelle)).forEach(v => { const x = v.werte || {};
+    const s = v.quelle === "gewicht" ? `${fmt(x.kg, 1)} kg` : v.quelle === "wasser" ? `${fmt((x.ml || 0) / 1000, 2)} l` : v.quelle === "cardio" ? `${x.art || "Cardio"} · ${fmt(x.minuten)} min · ~${fmt(x.kcal)} kcal` : Object.entries(x).map(([k, val]) => `${k} ${fmt(val, 1)}`).join(" · ");
+    out.push({ t: { gewicht: "Gewicht", wasser: "Wasser", cardio: "Cardio", messung: "Messwerte" }[v.quelle] || v.quelle, s, open: { gewicht: 'data-act="gewicht"', cardio: 'data-act="cardio"', messung: 'data-act="messung"', wasser: 'data-act="wasser-sheet"' }[v.quelle] ? `${{ gewicht: 'data-act="gewicht"', cardio: 'data-act="cardio"', messung: 'data-act="messung"', wasser: 'data-act="wasser-sheet"' }[v.quelle]} data-date="${d}"` : "", del: `data-kind="tw" data-d="${d}" data-q="${esc(v.quelle)}"` }); });
+  if (on("training")) S.trainings.filter(x => x.datum === d).forEach(x => out.push({ t: x.tag_name || "Training", s: `${S.sets.filter(y => y.training_id === x.id).length} Sätze${x.schmerz_wert != null ? ` · Sehne ${x.schmerz_wert}/10` : ""}`, open: `data-act="tr-open" data-id="${esc(x.id)}"`, del: `data-kind="tr" data-id="${esc(x.id)}"` }));
+  return out;
+}
+VIEWS.verlauf = () => {
+  const n = S.vn || 14, t = todayISO(), days = Array.from({ length: n }, (_, i) => addDays(t, -i));
+  const blocks = days.map(d => ({ d, items: verlaufItems(d) })).filter(b => b.items.length);
+  return `<div class="seg" role="group" aria-label="Filter">${VF.map(([k, l]) => `<button class="small" data-act="vf" data-k="${k}" aria-pressed="${(S.vf || "alle") === k}">${l}</button>`).join("")}</div>
+  <section class="card">${blocks.length ? blocks.map(b => `<div class="vday"><div class="eyebrow">${["Heute", "Gestern"].includes(relLabel(b.d)) ? `${relLabel(b.d)} · ${dateLabel(b.d, { day: "numeric", month: "short" })}` : dateLabel(b.d, { weekday: "short", day: "numeric", month: "short" })}</div>${b.items.map(x => `<div class="vrow">${x.open ? `<button class="lrow tm" ${x.open}>` : `<span class="tm">`}<span><b>${esc(x.t)}</b><br><span class="muted">${esc(x.s)}</span></span>${x.open ? "</button>" : "</span>"}<span></span><button class="del" data-act="v-del" ${x.del} aria-label="${esc(x.t)} löschen">${trash}</button></div>`).join("")}</div>`).join("")
+    : `<div class="empty">In den letzten ${n} Tagen nichts gefunden.</div>`}
+  <button class="ghost small" data-act="vmore">Ältere Tage anzeigen</button></section>`;
+};
+ACT.vf = t => { S.vf = t.dataset.k; render(); };
+ACT.vmore = () => { S.vn = (S.vn || 14) + 30; render(); };
+ACT["v-del"] = async t => {
+  if (!t.classList.contains("sure")) { document.querySelectorAll(".del.sure").forEach(b => { b.classList.remove("sure"); b.innerHTML = trash; }); t.classList.add("sure"); t.textContent = "Löschen?"; return; }
+  const k = t.dataset.kind; buzz(20);
+  if (k === "e") { const e = S.log.find(x => x.id === t.dataset.id); S.log = S.log.filter(x => x.id !== t.dataset.id); render(); if (e?.foto_pfad && !e.foto_gesichert) await sb.storage.from("fotos").remove([e.foto_pfad]); await put("eintraege", "delete", null, { id: t.dataset.id }); }
+  if (k === "tw") { const d = t.dataset.d, qq = t.dataset.q; S.vals = S.vals.filter(v => !(v.datum === d && v.quelle === qq)); render(); await put("tageswerte", "delete", null, { datum: d, quelle: qq }); }
+  if (k === "tr") { const id = t.dataset.id; S.trainings = S.trainings.filter(x => x.id !== id); S.sets = S.sets.filter(x => x.training_id !== id); render(); await put("saetze", "delete", null, { training_id: id }); await put("trainings", "delete", null, { id }); }
+  if (k === "k") { const d = t.dataset.d, w = ensureWeek(weekOf(d)); delete (w.kantine_tag || {})[dayKey(d)]; render(); await saveWeek(w); }
+  toast("Gelöscht");
+};
+ACT["dev-del"] = async t => {
+  if (!t.classList.contains("sure")) { t.classList.add("sure"); t.textContent = "Löschen?"; return; }
+  const id = t.dataset.id; delete S.dev[id]; render(); await put("geraete", "delete", null, { id }); toast("Gerät gelöscht");
+};
+ACT["demo-reset-bar"] = async t => { if (!t.dataset.sure) { t.dataset.sure = "1"; t.textContent = "Wirklich?"; return; } (await import("./demo.js")).resetDemo(true); try { localStorage.removeItem("outbox-demo"); localStorage.removeItem(SK); } catch (e) { } location.reload(); };
+ACT["demo-reset"] = async t => { if (!t.dataset.sure) { t.dataset.sure = "1"; t.querySelector("small").textContent = "nochmal tippen"; return; } (await import("./demo.js")).resetDemo(true); try { localStorage.removeItem("outbox-demo"); localStorage.removeItem(SK); } catch (e) { } location.reload(); };
 async function fotoStat() {
   const el = $("#fotostat"); if (!el) return;
   const { data } = await sb.storage.from("fotos").list(S.user.id, { limit: 1000 });
@@ -228,20 +303,21 @@ document.addEventListener("change", async e => {
   e.target.value = "";
 });
 
-ACT.back = () => go(S.prev && S.prev !== S.view ? S.prev : "heute");
+ACT.back = () => go(S.prev && S.prev !== S.view ? S.prev : "menu");
 ACT.logout = async () => { await sb.auth.signOut(); location.reload(); };
 
 // ---------- Rendern & Navigation ----------
-const TITLES = { heute: "Heute", woche: "Woche planen", einkauf: "Einkauf", training: "Training", trends: "Trends", mehr: "Mehr" };
+const TITLES = { heute: "Heute", woche: "Woche planen", einkauf: "Einkauf", training: "Training", trends: "Trends", menu: "Menü", ziele: "Ziele & Einstellungen", rezepte: "Rezepte", vorrat: "Vorrat", geraete: "Geräte", fotos: "Essensfotos", daten: "Daten", verlauf: "Verlauf" };
+const SUB = ["woche", "einkauf", "ziele", "rezepte", "vorrat", "geraete", "fotos", "daten", "verlauf"];
 function render() {
   if (!S.ready) return;
   document.querySelectorAll("#tabs [data-v]").forEach(b => b.setAttribute("aria-current", b.dataset.v === S.view ? "page" : "false"));
   $("header.top").hidden = S.view === "heute"; $("#title").textContent = TITLES[S.view] || "";
-  $("#back").hidden = !["woche", "mehr"].includes(S.view);
+  $("#back").hidden = !SUB.includes(S.view);
   $("#view").innerHTML = VIEWS[S.view]();
-  if (S.view === "mehr") fotoStat();
+  if (S.view === "fotos") fotoStat();
 }
-function go(v) { if (!S.ready) return; closeSheet(); if (!["woche", "mehr"].includes(S.view)) S.prev = S.view; S.view = v; if (v !== "heute" && v !== "woche") S.date = S.date || todayISO(); render(); window.scrollTo(0, 0); }
+function go(v) { if (!S.ready) return; closeSheet(); if (!SUB.includes(S.view)) S.prev = S.view; S.view = v; if (v !== "heute" && v !== "woche") S.date = S.date || todayISO(); render(); window.scrollTo(0, 0); }
 hooks.render = render; hooks.go = go;
 
 document.addEventListener("click", async e => {
@@ -256,16 +332,19 @@ document.addEventListener("change", async e => {
   if (t.dataset.k) { const w = ensureWeek(t.dataset.w), d = t.dataset.d; w.kantine_tag = w.kantine_tag || {}; const o = { ...(w.kantine_tag[d] || {}) };
     if (t.dataset.k === "notiz") { if (t.value.trim()) o.notiz = t.value.trim(); else delete o.notiz; } else { const v = parseFloat(t.value); if (v > 0) o[t.dataset.k] = v; else delete o[t.dataset.k]; }
     if (o.kcal) w.kantine_tag[d] = o; else delete w.kantine_tag[d]; render(); await saveWeek(w); toast("Gespeichert"); }
+  if (t.dataset.dev) { const d = S.dev[t.dataset.dev]; if (!d) return; d[t.dataset.f] = Math.max(0, parseFloat(String(t.value).replace(",", ".")) || 0); await put("geraete", "update", { [t.dataset.f]: d[t.dataset.f] }, { id: d.id }); toast("Gespeichert"); }
   if (t.dataset.stock) { const v = Math.max(0, parseFloat(t.value) || 0); S.stock[t.dataset.stock] = v; await put("bestand", "upsert", { zutat_id: t.dataset.stock, menge: v }); toast("Vorrat gespeichert"); }
-  if (t.dataset.ek) { let c = {}; try { c = JSON.parse(localStorage.getItem("ek-" + S.week.woche) || "{}"); } catch (x) { } c[t.dataset.ek] = t.checked; try { localStorage.setItem("ek-" + S.week.woche, JSON.stringify(c)); } catch (x) { } t.closest(".li").classList.toggle("done", t.checked); buzz(10); }
+  if (t.dataset.ek) { let c = {}; try { c = JSON.parse(localStorage.getItem((DEMO ? "demo-" : "") + "ek-" + S.week.woche) || "{}"); } catch (x) { } c[t.dataset.ek] = t.checked; try { localStorage.setItem((DEMO ? "demo-" : "") + "ek-" + S.week.woche, JSON.stringify(c)); } catch (x) { } t.closest(".li").classList.toggle("done", t.checked); buzz(10); }
 });
 document.addEventListener("submit", async e => {
   if (e.target.id === "newdev") { e.preventDefault(); const f = new FormData(e.target); const name = f.get("name").trim(); if (!name) return;
     const id = name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    const row = { id, name, gewicht_schritt: +f.get("schritt") || 5, gewicht_min: +f.get("min") || 0 };
+    const row = { id, name, gewicht_schritt: +f.get("schritt") || 1, gewicht_min: +f.get("min") || 3 };
     S.dev[id] = row; render(); await put("geraete", "upsert", row); toast("Gerät gespeichert"); }
   if (e.target.id === "ziele") { e.preventDefault(); const f = new FormData(e.target); const v = { ...(S.set.ziel || {}), kcal: +f.get("kcal") || 2200, eiweiss: +f.get("eiweiss") || 170 };
-    S.set.ziel = v; render(); await put("einstellungen", "upsert", { key: "ziel", value: v }); toast("Ziele gespeichert"); }
+    const td = f.getAll("td"), k = { kcal: +f.get("kk") || 700, eiweiss: +f.get("kp") || 25 };
+    S.set.ziel = v; S.set.trainingstage = td; S.set.kantine = k; render();
+    await put("einstellungen", "upsert", [{ key: "ziel", value: v }, { key: "trainingstage", value: td }, { key: "kantine", value: k }]); toast("Gespeichert"); }
 });
 
 // ---------- Login ----------
@@ -283,6 +362,7 @@ async function boot() {
   const { data } = await sb.auth.getSession();
   if (!data.session) return loginView();
   S.user = data.session.user; $("#tabs").hidden = false;
+  if (DEMO && !$(".demo-bar")) { const b = document.createElement("div"); b.className = "demo-bar"; b.innerHTML = `Demo-Version · Daten nur in diesem Browser <button data-act="demo-reset-bar">Zurücksetzen</button>`; document.body.prepend(b); }
   try { await loadAll(); } catch (e) { $("#view").innerHTML = `<div class="empty">Keine Verbindung zur Datenbank. <button class="ghost" onclick="location.reload()">Neu laden</button></div>`; status("Offline"); return; }
   render();
 }

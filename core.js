@@ -1,13 +1,20 @@
 // Gemeinsamer Kern: Verbindung, Zustand, Hilfen, Rechnen, Offline-Warteschlange.
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
 import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 
-export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+// ?demo öffnet eine Test-Version mit eigener Datenbank nur in diesem Browser (?demo=leer ohne Beispielverlauf).
+const params = new URLSearchParams(location.search);
+export const DEMO = params.has("demo");
+export const sb = DEMO
+  ? (await import("./demo.js")).createDemo(params.get("demo") !== "leer")
+  : (await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm")).createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
 export const $ = (s, r = document) => r.querySelector(s);
 export const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 export const fmt = (n, d = 0) => Number(n || 0).toLocaleString("de-DE", { maximumFractionDigits: d });
 export const DAYS = [["mo", "Mo", 1], ["di", "Di", 1], ["mi", "Mi", 1], ["do", "Do", 1], ["fr", "Fr", 1], ["sa", "Sa", 0], ["so", "So", 0]];
-export const SLOTS = [["frueh", "Früh"], ["mittag", "Mittag"], ["abend", "Abend"], ["snack", "Snack"]];
+export const SLOTS = [["frueh", "Frühstück"], ["mittag", "Mittag"], ["abend", "Abend"], ["snack", "Snack"]];
+// Feste Essenszeiten (später einstellbar über S.set.zeiten)
+export const slotTime = k => ({ frueh: "06:00", mittag: "11:30", abend: "18:00", ...(S.set.zeiten || {}) })[k] || "";
+const hhmm = ts => { try { return new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
 export const AREA = ["Obst & Gemüse", "Kühlregal", "Konserven", "Trockenware", "Wurst & Käse", "Sonstiges"];
 
 // Zustand der App (wird beim Start aus Supabase geladen)
@@ -37,11 +44,13 @@ export const weekOf = s => isoWeek(parse(s));
 export const monday = s => addDays(s, -((parse(s).getDay() + 6) % 7));
 export const dateLabel = (s, opt = { weekday: "long", day: "numeric", month: "long" }) => parse(s).toLocaleDateString("de-DE", opt);
 export function relLabel(s) { const t = todayISO(); return s === t ? "Heute" : s === addDays(t, -1) ? "Gestern" : s === addDays(t, 1) ? "Morgen" : dateLabel(s, { weekday: "short", day: "numeric", month: "short" }); }
-export function slotNow() { const h = new Date().getHours(); return h < 10 ? "frueh" : h < 15 ? "mittag" : h < 21 ? "abend" : "snack"; }
+// Innerhalb ±1 Stunde um eine Essenszeit → diese Mahlzeit, sonst Snack mit aktueller Uhrzeit
+export function slotNow() { const n = new Date(), m = n.getHours() * 60 + n.getMinutes();
+  const hit = ["frueh", "mittag", "abend"].find(k => { const [h, mi] = slotTime(k).split(":").map(Number); return Math.abs(h * 60 + mi - m) <= 60; }); return hit || "snack"; }
 export const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g, () => (Math.random() * 16 | 0).toString(16)));
 
 // ---------- Rückmeldung ----------
-export function toast(t, kind = "") { const d = document.createElement("div"); d.className = "toast " + kind; d.setAttribute("role", "status"); d.textContent = t; document.body.append(d); setTimeout(() => d.remove(), 2600); }
+export function toast(t, kind = "") { document.querySelectorAll(".toast").forEach(x => x.remove()); const d = document.createElement("div"); d.className = "toast " + kind; d.setAttribute("role", "status"); d.textContent = t; document.body.append(d); setTimeout(() => d.remove(), 2600); }
 export function status(t) { const el = $("#status"); if (el) el.textContent = t || ""; }
 export function buzz(p = 12) { try { navigator.vibrate?.(p); } catch (e) { } }
 // Holt alle Zeilen einer Abfrage seitenweise (Supabase liefert max. 1000 pro Anfrage).
@@ -51,7 +60,7 @@ export async function all(make, page = 1000) {
 export async function q(p) { const { data, error } = await p; if (error) { console.error(error); throw error; } return data; }
 
 // ---------- Offline-Warteschlange ----------
-const OB = "outbox-v1";
+const OB = DEMO ? "outbox-demo" : "outbox-v1";
 const obGet = () => { try { return JSON.parse(localStorage.getItem(OB) || "[]"); } catch (e) { return []; } };
 const obSet = a => { try { localStorage.setItem(OB, JSON.stringify(a)); } catch (e) { } };
 const isNet = e => !navigator.onLine || e instanceof TypeError || /fetch|network|load failed/i.test(String(e?.message || e));
@@ -80,6 +89,17 @@ export async function flush() {
 window.addEventListener("online", flush);
 
 // ---------- Rechnen ----------
+// Alle Nährwerte: Schlüssel, Bezeichnung, Einheit, Nachkommastellen
+export const NUTR = [["kcal", "Energie", "kcal", 0], ["eiweiss", "Eiweiß", "g", 1], ["kh", "Kohlenhydrate", "g", 1], ["zucker", "davon Zucker", "g", 1], ["fett", "Fett", "g", 1], ["ges_fett", "davon gesättigt", "g", 1], ["ballast", "Ballaststoffe", "g", 1], ["salz", "Salz", "g", 2]];
+export function nutrFull(id, qty) { const i = S.ing[id]; const o = {}; if (!i) return o; const f = i.einheit === "g" ? qty / 100 : qty; NUTR.forEach(([k]) => { o[k] = i[k] == null || i[k] === "" ? null : (+i[k]) * f; }); return o; }
+export function addN(a, b) { const o = { ...a }; NUTR.forEach(([k]) => { if (b[k] == null) { if (o[k] === undefined) o[k] = null; o["_miss_" + k] = true; } else o[k] = (o[k] || 0) + b[k]; }); return o; }
+// Ein Rezept aufgeschlüsselt pro Portion: jede Zutat mit Menge und allen Nährwerten
+export function breakdown(rid) {
+  const r = S.rec[rid]; if (!r) return { rows: [], total: {} }; const n = r.portionen || 1; let total = {};
+  const rows = (r.zutaten || []).map(z => { const i = S.ing[z.id] || {}, m = z.menge / n, v = nutrFull(z.id, m); total = addN(total, v);
+    return { id: z.id, name: String(i.name || z.id).split(" (")[0], menge: m, unit: i.einheit === "g" ? (/\bml\b/.test(i.name || "") ? "ml" : "g") : "Stk", v, quelle: i.naehr_quelle || "", bild: i.bild || "" }; });
+  return { rows, total };
+}
 export function nutr(id, qty) { const i = S.ing[id]; if (!i) return [0, 0]; const f = i.einheit === "g" ? qty / 100 : qty; return [(+i.kcal || 0) * f, (+i.eiweiss || 0) * f]; }
 export function portion(rid) { const r = S.rec[rid]; if (!r) return [0, 0]; let k = 0, p = 0; (r.zutaten || []).forEach(z => { const [a, b] = nutr(z.id, z.menge); k += a; p += b; }); const n = r.portionen || 1; return [k / n, p / n]; }
 export const goals = () => ({ kcal: +(S.set.ziel?.kcal) || 2200, eiweiss: +(S.set.ziel?.eiweiss) || 170 });
@@ -93,22 +113,22 @@ export function dayTimeline(s) {
   if (S.rec.shake) {
     const [k, p] = portion("shake");
     const det = (S.rec.shake.zutaten || []).map(z => { const i = S.ing[z.id] || {}; const n = String(i.name || z.id).split(" (")[0]; return `${fmt(z.menge)} ${i.einheit === "g" ? (/\bml\b/.test(i.name || "") ? "ml" : "g") : "×"} ${n}`; }).join(", ");
-    out.push({ slot: "frueh", name: "Shake", det, k, p });
+    out.push({ slot: "frueh", name: "Shake", det, k, p, n: breakdown("shake").total, recs: ["shake"] });
   }
   if (work) {
     const base = S.set.kantine || { kcal: 700, eiweiss: 25 }, o = (w.kantine_tag || {})[d];
-    if (o?.kcal) out.push({ slot: "mittag", name: "Kantine", det: o.notiz || "eingetragen", k: +o.kcal, p: +o.eiweiss || 0, kantine: true });
+    if (o?.kcal) out.push({ slot: "mittag", name: "Kantine", det: o.notiz || "eingetragen", k: +o.kcal, p: +o.eiweiss || 0, kantine: true, n: { kcal: +o.kcal, eiweiss: +o.eiweiss || 0 } });
     else if (!logs.some(e => e.slot === "mittag")) out.push({ slot: "mittag", name: "Kantine", det: "pauschal geschätzt – tippe zum Eintragen", k: +base.kcal, p: +base.eiweiss, kantine: true, open: true });
   }
   if (plan.rezept && S.rec[plan.rezept]) {
-    let [k, p] = portion(plan.rezept); let det = past ? "laut Plan" : "geplant";
-    if (plan.salat && S.rec.salat) { const [a, b] = portion("salat"); k += a; p += b; det += " · mit Salat"; }
-    out.push({ slot: "abend", name: S.rec[plan.rezept].kurz || S.rec[plan.rezept].name, det, k, p, planned: !past });
+    let [k, p] = portion(plan.rezept); let det = past ? "laut Plan" : "geplant", n = breakdown(plan.rezept).total, recs = [plan.rezept];
+    if (plan.salat && S.rec.salat) { const [a, b] = portion("salat"); k += a; p += b; det += " · mit Salat"; n = addN(n, breakdown("salat").total); recs.push("salat"); }
+    out.push({ slot: "abend", name: S.rec[plan.rezept].kurz || S.rec[plan.rezept].name, det, k, p, planned: !past, n, recs });
   }
-  logs.forEach(e => out.push({ slot: e.slot || "snack", name: e.name, k: +e.kcal || 0, p: +e.eiweiss || 0, entry: e, pending: e.status === "offen",
+  logs.forEach(e => out.push({ slot: e.slot || "snack", name: e.name, k: +e.kcal || 0, p: +e.eiweiss || 0, entry: e, pending: e.status === "offen", n: Object.fromEntries(NUTR.map(([k]) => [k, e[k] == null ? null : +e[k]])),
     det: e.status === "offen" ? "Foto – Schätzung folgt" : [e.menge ? `${fmt(e.menge)} ${e.einheit || "g"}` : "", { foto: "Foto", barcode: "gescannt", zuletzt: "wie zuletzt" }[e.quelle] || ""].filter(Boolean).join(" · ") || "eingetragen" }));
-  const order = SLOTS.map(x => x[0]);
-  return out.sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
+  out.forEach(x => { x.time = x.entry && x.slot === "snack" && x.entry.created_at && iso(new Date(x.entry.created_at)) === s ? hhmm(x.entry.created_at) : slotTime(x.slot) || "–"; });
+  return out.sort((a, b) => (a.time || "99").localeCompare(b.time || "99"));
 }
 export function dayTotals(s) { const t = dayTimeline(s); return { k: t.reduce((a, x) => a + x.k, 0), p: t.reduce((a, x) => a + x.p, 0), open: t.filter(x => x.pending).length }; }
 export const val = (s, quelle) => S.vals.find(v => v.datum === s && v.quelle === quelle)?.werte || null;

@@ -1,10 +1,10 @@
 // Eintragen: Plus-Menü mit Foto, Barcode, Schnell-Eintrag, Zuletzt gegessen, Gewicht, Wasser.
-import { sb, S, ACT, $, esc, fmt, SLOTS, DAYS, MESS, put, toast, buzz, uid, slotNow, todayISO, dayKey, val, render, go, relLabel } from "./core.js";
+import { sb, S, ACT, $, esc, fmt, SLOTS, slotTime, NUTR, breakdown, addN, DAYS, MESS, put, toast, buzz, uid, slotNow, todayISO, dayKey, val, render, go, relLabel } from "./core.js";
 
 // ---------- Blatt (Bottom Sheet) ----------
 let lastFocus = null, stopCam = null;
 export function openSheet(html, mount) {
-  closeSheet(); lastFocus = document.activeElement;
+  const keep = sheetDate; closeSheet(); sheetDate = keep; lastFocus = document.activeElement;
   const bg = document.createElement("div"); bg.className = "sheet-bg"; bg.id = "sheet";
   bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="Eintragen"><div class="grip" aria-hidden="true"></div>${html}</div>`;
   bg.addEventListener("click", e => { if (e.target === bg) closeSheet(); });
@@ -14,14 +14,16 @@ export function openSheet(html, mount) {
   bg.querySelector("input:not([type=file]),button")?.focus({ preventScroll: true });
 }
 export function closeSheet() {
-  stopCam?.(); stopCam = null;
+  stopCam?.(); stopCam = null; sheetDate = null;
   const el = $("#sheet"); if (!el) return; el.remove(); document.body.classList.remove("noscroll"); lastFocus?.focus?.({ preventScroll: true });
 }
 document.addEventListener("keydown", e => { if (e.key === "Escape" && $("#sheet")) closeSheet(); });
 ACT["sheet-close"] = closeSheet;
 
-const slotSelect = (sel = slotNow()) => `<label>Mahlzeit<select name="slot">${SLOTS.map(([k, l]) => `<option value="${k}" ${k === sel ? "selected" : ""}>${l}</option>`).join("")}</select></label>`;
-const day = () => S.date || todayISO();
+const slotSelect = (sel = slotNow()) => `<label>Zeit<select name="slot">${SLOTS.map(([k, l]) => `<option value="${k}" ${k === sel ? "selected" : ""}>${slotTime(k) ? slotTime(k) + " · " + l : l + " · jetzt"}</option>`).join("")}</select></label>`;
+let sheetDate = null; // Datum, wenn ein Blatt aus dem Verlauf geöffnet wurde
+const day = () => sheetDate || S.date || todayISO();
+const fromT = t => { sheetDate = t?.dataset?.date || null; };
 
 function recent() {
   const seen = new Set(), out = [];
@@ -61,6 +63,27 @@ async function saveEntry(f) {
   await put("eintraege", "insert", row);
   toast(row.status === "offen" ? "Foto gespeichert – Schätzung folgt" : `${row.name} eingetragen`);
 }
+
+// ---------- Details: Zutaten mit allen Nährwerten ----------
+const nf = (v, d) => v == null ? "–" : fmt(v, d);
+export function nutrTable(rows, total, head = "Zutat") {
+  const cols = NUTR.filter(([k]) => k !== "ges_fett" && k !== "ballast");
+  return `<div class="tablewrap"><table class="ntab"><thead><tr><th scope="col">${head}</th>${cols.map(([, l, u]) => `<th scope="col">${l.replace("davon ", "")}${u && u !== "kcal" ? ` (${u})` : u === "kcal" ? " (kcal)" : ""}</th>`).join("")}</tr></thead><tbody>
+    ${rows.map(r => `<tr><th scope="row">${esc(r.name)}<small>${r.menge != null ? fmt(r.menge, r.unit === "Stk" ? 2 : 0) + " " + r.unit : ""}${r.quelle === "Etikett" ? " · Etikett" : r.quelle ? " · Richtwert" : ""}</small></th>${cols.map(([k, , , d]) => `<td>${nf(r.v[k], d)}</td>`).join("")}</tr>`).join("")}</tbody>
+    <tfoot><tr><th scope="row">Summe</th>${cols.map(([k, , , d]) => `<td>${total["_miss_" + k] && total[k] != null ? "≥ " : ""}${nf(total[k], d)}</td>`).join("")}</tr></tfoot></table></div>`;
+}
+ACT.detail = t => {
+  fromT(t); const recs = (t.dataset.recs || "").split(",").filter(id => S.rec[id]); if (!recs.length) return;
+  let rows = [], total = {}; recs.forEach(id => { const b = breakdown(id); rows = rows.concat(b.rows); total = addN(total, b.total); });
+  const r0 = S.rec[recs[0]], labels = rows.filter(r => r.bild), extra = total.ges_fett != null || total.ballast != null;
+  openSheet(`<div class="sheet-head"><h2>${esc(recs.map(id => S.rec[id].kurz || S.rec[id].name).join(" + "))}</h2><span class="muted">${esc(relLabel(day()))}${t.dataset.time ? " · " + esc(t.dataset.time) : ""}</span></div>
+    ${r0.bild ? `<img class="shot" src="${esc(r0.bild)}" alt="${esc(r0.name)}">` : ""}
+    ${nutrTable(rows, total)}
+    ${extra ? `<div class="muted">Davon gesättigte Fettsäuren ${nf(total.ges_fett, 1)} g · Ballaststoffe ${nf(total.ballast, 1)} g</div>` : ""}
+    <div class="muted">Werte pro Portion. „Etikett“ = von deinem Foto, „Richtwert“ = Durchschnittswert. „≥“ heißt: Für eine Zutat fehlt der Wert noch.</div>
+    ${labels.map(r => `<details><summary>Etikett: ${esc(r.name)}</summary><img class="shot label" src="${esc(r.bild)}" alt="Nährwerttabelle ${esc(r.name)}" loading="lazy"></details>`).join("")}
+    ${recs[0] !== "shake" ? `<button class="ghost" data-go="woche">Abendessen ändern</button>` : ""}`);
+};
 
 // ---------- Schnell eintragen ----------
 ACT.quick = () => openSheet(`<div class="sheet-head"><h2>Schnell eintragen</h2><button class="small ghost" data-act="plus">Zurück</button></div>
@@ -126,48 +149,61 @@ ACT["entry-del"] = async t => {
 };
 
 // ---------- Gewicht & Wasser ----------
+const delBtn = q => val(day(), q) ? `<button type="button" class="ghost danger wide" data-act="val-del" data-q="${q}">Eintrag löschen</button>` : "";
+ACT["val-del"] = async t => {
+  if (t.dataset.sure !== "1") { t.dataset.sure = "1"; t.textContent = "Wirklich löschen?"; return; }
+  const d = day(), q = t.dataset.q; S.vals = S.vals.filter(v => !(v.datum === d && v.quelle === q)); closeSheet(); buzz(20); render();
+  await put("tageswerte", "delete", null, { datum: d, quelle: q }); toast("Gelöscht");
+};
 function setVal(quelle, werte) {
   const d = day(), row = S.vals.find(v => v.datum === d && v.quelle === quelle);
   if (row) row.werte = werte; else S.vals.push({ datum: d, quelle, werte });
   return put("tageswerte", "upsert", { datum: d, quelle, werte });
 }
-ACT.gewicht = () => {
+ACT.gewicht = t => { fromT(t);
   const last = [...S.vals].filter(v => v.quelle === "gewicht").sort((a, b) => b.datum.localeCompare(a.datum))[0];
   const cur = val(day(), "gewicht")?.kg ?? last?.werte?.kg ?? S.set.profil?.gewicht_kg ?? "";
   openSheet(`<div class="sheet-head"><h2>Gewicht</h2><span class="muted">${esc(relLabel(day()))}</span></div>
     <form id="gf" class="form"><label class="wide">Gewicht in kg<input name="kg" type="number" inputmode="decimal" min="30" max="300" step="0.1" required value="${cur}"></label>
-    <p class="muted wide">Am besten morgens nach dem Aufstehen wiegen. Die App glättet Schwankungen im Trend.</p><button class="wide">Speichern</button></form>`,
-  sh => sh.querySelector("#gf").onsubmit = async e => { e.preventDefault(); const kg = Math.round(+new FormData(e.target).get("kg") * 10) / 10; closeSheet(); buzz(15); render(); await setVal("gewicht", { kg }); toast(`${fmt(kg, 1)} kg gespeichert`); });
+    <p class="muted wide">Am besten morgens nach dem Aufstehen wiegen. Die App glättet Schwankungen im Trend.</p><button class="wide">Speichern</button>${delBtn("gewicht")}</form>`,
+  sh => sh.querySelector("#gf").onsubmit = async e => { e.preventDefault(); const kg = Math.round(+new FormData(e.target).get("kg") * 10) / 10; const p = setVal("gewicht", { kg }); closeSheet(); buzz(15); render(); await p; toast(`${fmt(kg, 1)} kg gespeichert`); });
 };
-ACT.wasser = async () => { const ml = (+(val(day(), "wasser")?.ml) || 0) + 250; closeSheet(); buzz(15); render(); await setVal("wasser", { ml }); toast(`Wasser: ${fmt(ml / 1000, 2)} l`); };
+ACT.wasser = async () => { const ml = (+(val(day(), "wasser")?.ml) || 0) + 250; const p = setVal("wasser", { ml }); closeSheet(); buzz(15); render(); await p; toast(`Wasser: ${fmt(ml / 1000, 2)} l`); };
+ACT["wasser-sheet"] = t => { fromT(t); const ml = +(val(day(), "wasser")?.ml) || 0;
+  openSheet(`<div class="sheet-head"><h2>Wasser</h2><span class="muted">${esc(relLabel(day()))}</span></div>
+    <form id="wf" class="form"><label class="wide">Menge in Litern<input name="l" type="number" inputmode="decimal" min="0" max="10" step="0.05" value="${ml ? ml / 1000 : ""}"></label>
+    <button type="button" class="ghost" data-act="wasser-plus" data-d="-250">− 250 ml</button><button type="button" class="ghost" data-act="wasser-plus" data-d="250">+ 250 ml</button>
+    <button class="wide">Speichern</button>${delBtn("wasser")}</form>`,
+  sh => sh.querySelector("#wf").onsubmit = async e => { e.preventDefault(); const l = +String(new FormData(e.target).get("l")).replace(",", ".") || 0; const p = setVal("wasser", { ml: Math.round(l * 1000) }); closeSheet(); render(); await p; toast("Gespeichert"); }); };
+ACT["wasser-plus"] = t => { const f = $("#wf"); const v = Math.max(0, (+String(f.l.value).replace(",", ".") || 0) + +t.dataset.d / 1000); f.l.value = Math.round(v * 100) / 100; };
 
 // ---------- Messwerte ----------
-ACT.messung = () => {
+ACT.messung = t => { fromT(t);
   const c = val(day(), "messung") || {};
   openSheet(`<div class="sheet-head"><h2>Messwerte</h2><span class="muted">${esc(relLabel(day()))}</span></div>
     <form id="mf" class="form">${MESS.map(([k, l, u, dec]) => `<label>${l}${u ? ` (${u})` : ""}<input name="${k}" type="number" inputmode="decimal" min="0" step="${dec ? "0.1" : "1"}" value="${c[k] ?? ""}"></label>`).join("")}
-    <p class="muted wide">Nur ausfüllen, was du gemessen hast. Leere Felder werden ignoriert.</p><button class="wide">Speichern</button></form>`,
+    <p class="muted wide">Nur ausfüllen, was du gemessen hast. Leere Felder werden ignoriert.</p><button class="wide">Speichern</button>${delBtn("messung")}</form>`,
   sh => sh.querySelector("#mf").onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target), w = {};
     MESS.forEach(([k]) => { const v = f.get(k); if (v !== "" && v != null) w[k] = +v; });
     if (!Object.keys(w).length) return toast("Bitte mindestens einen Wert eintragen");
-    closeSheet(); buzz(15); render(); await setVal("messung", w); toast("Messwerte gespeichert"); });
+    const p = setVal("messung", w); closeSheet(); buzz(15); render(); await p; toast("Messwerte gespeichert"); });
 };
 
 // ---------- Cardio (Ergometer usw.) ----------
 // Kalorien aus Watt: mechanische Arbeit / Wirkungsgrad ~22 %; ohne Watt grobe Schätzung über die Dauer.
 export const cardioKcal = (min, watt) => watt > 0 ? Math.round(watt * min * 60 / 4184 / 0.22) : Math.round(min * 6);
-ACT.cardio = () => {
+ACT.cardio = t => { fromT(t);
   const c = val(day(), "cardio") || {};
   openSheet(`<div class="sheet-head"><h2>Cardio</h2><span class="muted">${esc(relLabel(day()))}</span></div>
     <form id="cf" class="form"><label class="wide">Art<input name="art" value="${esc(c.art || "Ergometer")}" maxlength="40"></label>
     <label>Minuten<input name="minuten" type="number" inputmode="numeric" min="1" max="600" required value="${c.minuten || ""}"></label>
     <label>Watt (Ø, falls bekannt)<input name="watt" type="number" inputmode="numeric" min="0" max="600" value="${c.watt || ""}"></label>
-    <div class="wide total" id="ck"></div><button class="wide">Speichern</button></form>`,
+    <div class="wide total" id="ck"></div><button class="wide">Speichern</button>${delBtn("cardio")}</form>`,
   sh => { const f = sh.querySelector("#cf"), out = sh.querySelector("#ck");
     const calc = () => { const k = cardioKcal(+f.minuten.value || 0, +f.watt.value || 0); out.innerHTML = `ca. <b class="num">${fmt(k)} kcal</b> verbraucht`; return k; };
     f.addEventListener("input", calc); calc();
     f.onsubmit = async e => { e.preventDefault(); const w = { art: f.art.value.trim() || "Cardio", minuten: +f.minuten.value, watt: +f.watt.value || null, kcal: calc() };
-      closeSheet(); buzz(15); await setVal("cardio", w); render(); toast(`${w.art}: ${w.minuten} min · ca. ${fmt(w.kcal)} kcal`); }; });
+      const p = setVal("cardio", w); closeSheet(); buzz(15); render(); await p; toast(`${w.art}: ${w.minuten} min · ca. ${fmt(w.kcal)} kcal`); }; });
 };
 
 // ---------- Barcode ----------

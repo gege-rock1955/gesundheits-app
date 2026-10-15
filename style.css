@@ -226,3 +226,46 @@ body.noscroll{overflow:hidden}
 .mtab thead th{color:var(--muted);font-weight:700;font-size:12px}
 .mtab tbody th{font-weight:700}
 .filebtn{background:transparent;display:grid;place-items:center;text-align:center;font-weight:700;border:1px solid var(--basil);color:var(--basil);border-radius:10px;padding:10px 14px;min-height:44px;cursor:pointer;font-size:15px}
+/* ---------- v4: Training-Eingabe, Menü, Verlauf ---------- */
+.stepper input.sv{border:0;border-radius:0;background:var(--card);text-align:center;padding:0;min-height:40px;font-size:16px;-moz-appearance:textfield;width:100%}
+.stepper input.sv::-webkit-outer-spin-button,.stepper input.sv::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.sethead{display:grid;grid-template-columns:24px 1fr 1fr 48px;gap:8px;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.sethead span:nth-child(2),.sethead span:nth-child(3){text-align:center}
+.setbtns{justify-content:flex-start;gap:8px}
+.lrow{all:unset;box-sizing:border-box;cursor:pointer;display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);min-height:44px;width:100%}
+.lrow:last-child{border-bottom:0}
+.lrow:focus-visible{outline:2px solid var(--basil)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tile{all:unset;box-sizing:border-box;cursor:pointer;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 8px;display:grid;justify-items:center;gap:6px;text-align:center;font-size:13px;font-weight:700;color:var(--ink);min-height:92px;align-content:center;position:relative}
+.tile svg{width:26px;height:26px;color:var(--basil)}
+.tile small{font-size:11px;color:var(--muted);font-weight:400}
+.tile .badge{position:absolute;top:8px;right:8px;background:var(--paprika);color:#fff;border-radius:999px;font-size:11px;min-width:20px;padding:1px 6px}
+.tile:focus-visible{outline:2px solid var(--basil)}
+.vday{display:grid;gap:2px}
+.vrow{display:grid;grid-template-columns:minmax(0,1fr) auto 44px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.vrow .tm{display:grid;min-width:0}.vrow .tm .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vrow .del{min-height:40px;min-width:40px;padding:0;background:transparent;border:1px solid var(--line);color:var(--paprika);border-radius:10px;display:grid;place-items:center}
+.vrow .del svg{width:18px;height:18px}
+.vrow .del.sure{background:var(--paprika);color:#fff;border-color:var(--paprika);font-size:12px;min-width:72px}
+.devrow{display:grid;grid-template-columns:minmax(0,1fr) 70px 70px 44px;gap:8px;align-items:end;padding:8px 0;border-bottom:1px solid var(--line)}
+.devrow label{font-size:11px}
+.devrow input{padding:8px;font-size:16px}
+.demo-bar{background:var(--corn);color:#1b1404;text-align:center;font-size:13px;font-weight:700;padding:6px 12px;display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap}
+.demo-bar button{min-height:32px;padding:4px 10px;font-size:12px;background:#1b1404;border-color:#1b1404;color:#fff}
+.radar.run{background:var(--ink);color:var(--bg)}.radar.run span{color:var(--bg)}
+fieldset.days{grid-column:1/-1;border:1px solid var(--line);border-radius:12px;display:flex;flex-wrap:wrap;gap:4px 14px;padding:6px 12px;margin:0}
+fieldset.days legend{font-size:13px;color:var(--muted);padding:0 4px}
+/* ---------- v5: Nährwert-Details ---------- */
+.minis{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted)}
+.minis b{color:var(--ink);font-size:13px}
+.ntab{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+.ntab th,.ntab td{padding:7px 5px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.ntab thead th{font-size:11px;color:var(--muted);font-weight:700;white-space:normal;vertical-align:bottom}
+.ntab tbody th,.ntab tfoot th,.ntab thead th:first-child{text-align:left}
+.ntab tbody th{font-weight:700;white-space:normal;min-width:7.5rem}
+.ntab th small{display:block;font-weight:400;color:var(--muted);font-size:11px}
+.ntab tfoot th,.ntab tfoot td{font-weight:800;border-bottom:0;border-top:2px solid var(--ink)}
+.shot.label{max-height:none;object-fit:contain;background:#fff}
+.tli .slot{font-family:var(--f-num);font-size:13px}
+.vrow .lrow{border-bottom:0;padding:0}
+.vday+.vday{margin-top:10px}
