@@ -18,16 +18,16 @@
 <body>
 <div id="app">
   <header class="top">
-    <h1 id="title">Wochenteller</h1>
-    <span id="status" class="status"></span>
+    <span class="top-l"><button id="back" class="icon" data-act="back" aria-label="Zurück" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button><h1 id="title">Wochenteller</h1></span>
+    <span class="top-r"><span id="status" class="status" role="status"></span><button class="icon" data-go="mehr" aria-label="Einstellungen und Vorrat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></button></span>
   </header>
   <main id="view"><div class="empty">Lädt …</div></main>
   <nav class="tabs" id="tabs" hidden>
-    <button data-v="heute" aria-label="Heute"><span class="ic">◐</span>Heute</button>
-    <button data-v="woche" aria-label="Woche"><span class="ic">▦</span>Woche</button>
-    <button data-v="einkauf" aria-label="Einkauf"><span class="ic">☰</span>Einkauf</button>
-    <button data-v="training" aria-label="Training"><span class="ic">◆</span>Training</button>
-    <button data-v="mehr" aria-label="Mehr"><span class="ic">⋯</span>Mehr</button>
+    <button data-v="heute"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" class="fill"/></svg>Heute</button>
+    <button data-v="einkauf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h2l2 10h10l2-7H7"/><circle cx="9" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></svg>Einkauf</button>
+    <button class="fab" data-act="plus" aria-label="Eintragen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button data-v="training"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M18 4v16M3 8v8M21 8v8M6 12h12"/></svg>Training</button>
+    <button data-v="trends"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18l5-6 4 3 7-9"/></svg>Trends</button>
   </nav>
 </div>
 <script type="module" src="app.js"></script>
