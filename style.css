@@ -210,3 +210,19 @@ body.noscroll{overflow:hidden}
   .sheet-bg{background:rgba(0,0,0,.55)}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- v3: Langzeit, Messwerte ---------- */
+.seg.range{justify-content:center}
+.mlist{display:grid;gap:6px}
+.mrow{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:10px;padding:10px 12px;border-radius:12px;background:var(--bg);min-height:44px}
+.mrow small{grid-column:2;text-align:right}
+.mrow b{text-align:right}
+.mrow[aria-pressed="true"]{outline:2px solid var(--basil)}
+.mrow:focus-visible{outline:2px solid var(--basil)}
+.tablewrap{overflow-x:auto}
+.mtab{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+.mtab th,.mtab td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+.mtab th:first-child,.mtab thead th:first-child{text-align:left}
+.mtab thead th{color:var(--muted);font-weight:700;font-size:12px}
+.mtab tbody th{font-weight:700}
+.filebtn{background:transparent;display:grid;place-items:center;text-align:center;font-weight:700;border:1px solid var(--basil);color:var(--basil);border-radius:10px;padding:10px 14px;min-height:44px;cursor:pointer;font-size:15px}

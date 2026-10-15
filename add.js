@@ -1,5 +1,5 @@
 // Eintragen: Plus-Menü mit Foto, Barcode, Schnell-Eintrag, Zuletzt gegessen, Gewicht, Wasser.
-import { sb, S, ACT, $, esc, fmt, SLOTS, DAYS, put, toast, buzz, uid, slotNow, todayISO, dayKey, val, render, go, relLabel } from "./core.js";
+import { sb, S, ACT, $, esc, fmt, SLOTS, DAYS, MESS, put, toast, buzz, uid, slotNow, todayISO, dayKey, val, render, go, relLabel } from "./core.js";
 
 // ---------- Blatt (Bottom Sheet) ----------
 let lastFocus = null, stopCam = null;
@@ -40,6 +40,7 @@ ACT.plus = () => {
       <button class="qa" data-act="scan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3M7 8v8M10 8v8M13 8v8M16 8v8"/></svg>Barcode</button>
       <button class="qa" data-act="quick"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19h14M7 15l8-8 3 3-8 8H7z"/></svg>Schnell eintragen</button>
       <button class="qa" data-act="gewicht"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 10a4 4 0 0 1 6 0l-2 2"/></svg>Gewicht</button>
+      <button class="qa" data-act="messung"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>Messwerte</button>
       <button class="qa" data-act="wasser"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg>Wasser +250 ml<small>${water ? fmt(water / 1000, 2) + " l heute" : ""}</small></button>
       <button class="qa" data-act="cardio"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8M10 9 8 5H6"/></svg>Cardio${val(day(), "cardio") ? `<small>${fmt(val(day(), "cardio").minuten)} min eingetragen</small>` : ""}</button>
       ${work ? `<button class="qa" data-act="kantine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h16a8 8 0 0 1-16 0zM12 5v4M8 7v2M16 7v2"/></svg>Kantine</button>` : `<button class="qa" data-go="training"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M18 4v16M3 8v8M21 8v8M6 12h12"/></svg>Training</button>`}
@@ -139,6 +140,18 @@ ACT.gewicht = () => {
   sh => sh.querySelector("#gf").onsubmit = async e => { e.preventDefault(); const kg = Math.round(+new FormData(e.target).get("kg") * 10) / 10; closeSheet(); buzz(15); render(); await setVal("gewicht", { kg }); toast(`${fmt(kg, 1)} kg gespeichert`); });
 };
 ACT.wasser = async () => { const ml = (+(val(day(), "wasser")?.ml) || 0) + 250; closeSheet(); buzz(15); render(); await setVal("wasser", { ml }); toast(`Wasser: ${fmt(ml / 1000, 2)} l`); };
+
+// ---------- Messwerte ----------
+ACT.messung = () => {
+  const c = val(day(), "messung") || {};
+  openSheet(`<div class="sheet-head"><h2>Messwerte</h2><span class="muted">${esc(relLabel(day()))}</span></div>
+    <form id="mf" class="form">${MESS.map(([k, l, u, dec]) => `<label>${l}${u ? ` (${u})` : ""}<input name="${k}" type="number" inputmode="decimal" min="0" step="${dec ? "0.1" : "1"}" value="${c[k] ?? ""}"></label>`).join("")}
+    <p class="muted wide">Nur ausfüllen, was du gemessen hast. Leere Felder werden ignoriert.</p><button class="wide">Speichern</button></form>`,
+  sh => sh.querySelector("#mf").onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target), w = {};
+    MESS.forEach(([k]) => { const v = f.get(k); if (v !== "" && v != null) w[k] = +v; });
+    if (!Object.keys(w).length) return toast("Bitte mindestens einen Wert eintragen");
+    closeSheet(); buzz(15); render(); await setVal("messung", w); toast("Messwerte gespeichert"); });
+};
 
 // ---------- Cardio (Ergometer usw.) ----------
 // Kalorien aus Watt: mechanische Arbeit / Wirkungsgrad ~22 %; ohne Watt grobe Schätzung über die Dauer.

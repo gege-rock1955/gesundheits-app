@@ -1,5 +1,5 @@
 // Wochenteller – Hauptteil: Laden, Ansichten Heute/Woche/Einkauf/Mehr, Navigation, Login.
-import { sb, S, ACT, VIEWS, hooks, $, esc, fmt, q, put, flush, toast, buzz, status, DAYS, AREA, isoWeek, iso, todayISO, addDays, dayKey, monday, weekOf, dateLabel, relLabel,
+import { sb, S, ACT, VIEWS, hooks, $, esc, fmt, q, all, put, flush, toast, buzz, status, DAYS, AREA, isoWeek, iso, todayISO, addDays, dayKey, monday, weekOf, dateLabel, relLabel,
   portion, goals, trainDays, dayTimeline, val, weekRow } from "./core.js";
 import { closeSheet } from "./add.js";
 import { tendonCard } from "./training.js";
@@ -8,18 +8,18 @@ import { weekReview, reviewCard } from "./trends.js";
 // ---------- Laden ----------
 async function loadAll() {
   status("Synchronisiere …");
-  const t = todayISO(), d70 = addDays(t, -70), d120 = addDays(t, -120);
+  const t = todayISO();
   const [ing, rec, wks, st, set, fav, deals, dev, ex, plans, log, vals, trs, sets] = await Promise.all([
     q(sb.from("zutaten").select("*")), q(sb.from("rezepte").select("*")),
-    q(sb.from("wochen").select("*").gte("woche", weekOf(d70))),
+    all(() => sb.from("wochen").select("*").order("woche")),
     q(sb.from("bestand").select("*")), q(sb.from("einstellungen").select("*")),
     q(sb.from("favoriten").select("*")), q(sb.from("angebote").select("*").gte("bis", t)),
     q(sb.from("geraete").select("*")), q(sb.from("uebungen").select("*")),
     q(sb.from("trainingsplaene").select("*").eq("aktiv", true)),
-    q(sb.from("eintraege").select("*").gte("datum", d70).order("created_at")),
-    q(sb.from("tageswerte").select("*").gte("datum", d120)),
-    q(sb.from("trainings").select("*").gte("datum", d120)),
-    q(sb.from("saetze").select("*").gte("created_at", d120).limit(5000))]);
+    all(() => sb.from("eintraege").select("*").order("created_at")),
+    all(() => sb.from("tageswerte").select("*").order("datum")),
+    all(() => sb.from("trainings").select("*").order("datum")),
+    all(() => sb.from("saetze").select("*").order("created_at"))]);
   S.ing = Object.fromEntries(ing.map(x => [x.id, x])); S.rec = Object.fromEntries(rec.map(x => [x.id, x]));
   S.weeks = Object.fromEntries(wks.map(x => [x.woche, x]));
   S.stock = Object.fromEntries(st.map(x => [x.zutat_id, +x.menge])); S.set = Object.fromEntries(set.map(x => [x.key, x.value]));
@@ -134,6 +134,11 @@ VIEWS.mehr = () => { const g = goals(), photos = S.log.filter(e => e.foto_pfad &
     <div class="muted">Fotos werden beim Hochladen auf ca. 150 KB verkleinert. 1 GB kostenloser Speicher reicht für mehrere tausend Fotos.</div>
     ${photos.length ? `<button class="ghost" data-act="fotos-zip">Alle Fotos herunterladen (ZIP)</button>` : ""}
     ${S.zipped?.length ? `<button class="ghost danger" data-act="fotos-del">${S.zipped.length} gesicherte Fotos online löschen</button><div class="muted">Fotos, die noch auf eine Schätzung warten, bleiben online.</div>` : ""}</section>
+  <section class="card"><h2>Daten</h2>
+    <div class="muted">Sichere regelmäßig alle Daten auf dein Gerät, etwa einmal im Monat. Der Export öffnet sich auch in Excel.</div>
+    <button class="ghost" data-act="export">Alle Daten exportieren (ZIP)</button>
+    <label class="btn ghost filebtn" for="imp-in">Gewicht aus anderer App importieren (CSV)</label><input id="imp-in" type="file" accept=".csv,.txt,text/csv,text/plain" hidden>
+    <div class="muted">Funktioniert mit Exporten aus Samsung Health, Google Fit, Waagen-Apps oder Excel: Jede Zeile braucht ein Datum und ein Gewicht in kg.</div></section>
   <section class="card"><h2>Vorrat</h2><div class="grid2">${Object.entries(S.ing).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, i]) => `<label>${esc(i.name)}<input type="number" inputmode="decimal" data-stock="${esc(id)}" value="${S.stock[id] || 0}"><span class="muted">${i.einheit === "g" ? "g / ml" : "Stück"}</span></label>`).join("")}</div></section>
   <section class="card"><h2>Rezepte</h2>${Object.values(S.rec).map(r => { const [k, p] = portion(r.id); return `<details><summary>${esc(r.name)} <span class="muted num">${fmt(k)} kcal · ${fmt(p)} g</span></summary><ul>${(r.zutaten || []).map(z => `<li>${fmt(z.menge, 2)} ${S.ing[z.id]?.einheit === "g" ? "g" : "×"} ${esc(S.ing[z.id]?.name || z.id)}</li>`).join("")}</ul><p class="muted">${esc(r.zubereitung || "")}</p></details>`; }).join("") || `<div class="muted">Keine Rezepte.</div>`}</section>
   <section class="card"><h2>Geräte</h2>${Object.values(S.dev).map(d => `<div class="row"><span>${esc(d.name)}</span><span class="muted num">${fmt(d.gewicht_schritt, 1)} kg-Stufen</span></div>`).join("") || `<div class="muted">Noch keine Geräte.</div>`}
@@ -168,6 +173,61 @@ ACT["fotos-del"] = async t => {
   for (const e of list) { e.foto_gesichert = true; await put("eintraege", "update", { foto_gesichert: true }, { id: e.id }); }
   S.zipped = []; render(); toast(`${list.length} Fotos online gelöscht`);
 };
+// ---------- Export ----------
+const TABLES = ["eintraege", "tageswerte", "trainings", "saetze", "wochen", "rezepte", "zutaten", "bestand", "einstellungen", "favoriten", "geraete", "uebungen", "trainingsplaene", "angebote", "filialen"];
+function csv(rows) {
+  if (!rows.length) return "";
+  const flat = rows.map(r => { const o = {}; Object.entries(r).forEach(([k, v]) => { if (k === "user_id") return; if (k === "werte" && v && typeof v === "object") Object.entries(v).forEach(([a, b]) => o[a] = b); else o[k] = v; }); return o; });
+  const cols = [...new Set(flat.flatMap(o => Object.keys(o)))];
+  const cell = v => { if (v == null) return ""; if (typeof v === "number") return String(v).replace(".", ","); if (typeof v === "object") v = JSON.stringify(v); v = String(v); return /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+  return "\ufeff" + [cols.join(";"), ...flat.map(o => cols.map(c => cell(o[c])).join(";"))].join("\r\n");
+}
+ACT.export = async t => {
+  t.disabled = true; const old = t.textContent;
+  try {
+    const { zipSync, strToU8 } = await import("https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm"); const data = {}, files = {};
+    for (const tb of TABLES) { t.textContent = `Lade ${tb} …`; data[tb] = await all(() => sb.from(tb).select("*")); }
+    files["alle_daten.json"] = strToU8(JSON.stringify({ exportiert: new Date().toISOString(), app: "Wochenteller", daten: data }, null, 1));
+    ["eintraege", "tageswerte", "trainings", "saetze"].forEach(tb => { if (data[tb].length) files[`${tb}.csv`] = strToU8(csv(data[tb])); });
+    const blob = new Blob([zipSync(files)], { type: "application/zip" }), a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `wochenteller-export-${todayISO()}.zip`; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast(`Export fertig · ${Object.values(data).reduce((n, r) => n + r.length, 0)} Zeilen`);
+  } catch (e) { toast("Export fehlgeschlagen: " + (e.message || e), "warn"); }
+  t.disabled = false; t.textContent = old;
+};
+
+// ---------- Import: Gewicht aus beliebiger CSV/Text-Datei ----------
+function parseWeights(text) {
+  const byDay = {};
+  text.split(/\r?\n/).forEach(line => {
+    let d = null, m;
+    if ((m = line.match(/(\d{4})-(\d{2})-(\d{2})/))) d = `${m[1]}-${m[2]}-${m[3]}`;
+    else if ((m = line.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/))) d = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    if (!d || d > todayISO() || d < "1990-01-01") return;
+    const rest = line.replace(m[0], " ").replace(/\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?/g, " ").replace(/\b\d{10,}\b/g, " ");
+    const nums = (rest.match(/\d{2,3}(?:[.,]\d{1,2})?/g) || []).map(x => +x.replace(",", ".")).filter(x => x >= 35 && x <= 300);
+    if (nums.length) (byDay[d] = byDay[d] || []).push(nums[0]);
+  });
+  return Object.entries(byDay).map(([d, a]) => ({ d, kg: Math.round(a.reduce((s, x) => s + x, 0) / a.length * 10) / 10 })).sort((a, b) => a.d.localeCompare(b.d));
+}
+document.addEventListener("change", async e => {
+  if (e.target.id !== "imp-in") return; const f = e.target.files?.[0]; if (!f) return;
+  const rows = parseWeights(await f.text()), have = new Set(S.vals.filter(v => v.quelle === "gewicht").map(v => v.datum)), neu = rows.filter(r => !have.has(r.d));
+  if (!rows.length) return toast("Keine Gewichtswerte erkannt. Schick mir die Datei im Chat, dann passe ich den Import an.", "warn");
+  const { openSheet, closeSheet: close } = await import("./add.js");
+  openSheet(`<div class="sheet-head"><h2>Gewicht importieren</h2><span class="muted">${esc(f.name)}</span></div>
+    <div class="kpis three"><div><span class="muted">Gefunden</span><b class="num">${rows.length}</b></div><div><span class="muted">Neu</span><b class="num">${neu.length}</b></div><div><span class="muted">Bereich</span><b class="num">${fmt(Math.min(...rows.map(r => r.kg)), 0)}–${fmt(Math.max(...rows.map(r => r.kg)), 0)}</b></div></div>
+    <div class="muted">Von ${dateLabel(rows[0].d, { day: "numeric", month: "short", year: "numeric" })} bis ${dateLabel(rows[rows.length - 1].d, { day: "numeric", month: "short", year: "numeric" })}. Tage, die schon ein Gewicht haben, bleiben unverändert.</div>
+    <div class="tablewrap"><table class="mtab"><thead><tr><th scope="col">Datum</th><th scope="col">kg</th></tr></thead><tbody>${neu.slice(-5).map(r => `<tr><th scope="row">${r.d}</th><td>${fmt(r.kg, 1)}</td></tr>`).join("")}</tbody></table></div>
+    <button id="imp-go" ${neu.length ? "" : "disabled"}>${neu.length} Werte importieren</button>`,
+  sh => sh.querySelector("#imp-go").onclick = async () => {
+    const add = neu.map(r => ({ datum: r.d, quelle: "gewicht", werte: { kg: r.kg, import: f.name.slice(0, 60) } }));
+    S.vals.push(...add); close(); render();
+    for (let i = 0; i < add.length; i += 500) await put("tageswerte", "upsert", add.slice(i, i + 500));
+    toast(`${add.length} Gewichtswerte importiert`); });
+  e.target.value = "";
+});
+
 ACT.back = () => go(S.prev && S.prev !== S.view ? S.prev : "heute");
 ACT.logout = async () => { await sb.auth.signOut(); location.reload(); };
 

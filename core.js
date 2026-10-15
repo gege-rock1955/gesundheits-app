@@ -44,6 +44,10 @@ export const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xx
 export function toast(t, kind = "") { const d = document.createElement("div"); d.className = "toast " + kind; d.setAttribute("role", "status"); d.textContent = t; document.body.append(d); setTimeout(() => d.remove(), 2600); }
 export function status(t) { const el = $("#status"); if (el) el.textContent = t || ""; }
 export function buzz(p = 12) { try { navigator.vibrate?.(p); } catch (e) { } }
+// Holt alle Zeilen einer Abfrage seitenweise (Supabase liefert max. 1000 pro Anfrage).
+export async function all(make, page = 1000) {
+  const out = []; for (let i = 0; ; i += page) { const rows = await q(make().range(i, i + page - 1)); out.push(...rows); if (rows.length < page) return out; }
+}
 export async function q(p) { const { data, error } = await p; if (error) { console.error(error); throw error; } return data; }
 
 // ---------- Offline-Warteschlange ----------
@@ -108,6 +112,10 @@ export function dayTimeline(s) {
 }
 export function dayTotals(s) { const t = dayTimeline(s); return { k: t.reduce((a, x) => a + x.k, 0), p: t.reduce((a, x) => a + x.p, 0), open: t.filter(x => x.pending).length }; }
 export const val = (s, quelle) => S.vals.find(v => v.datum === s && v.quelle === quelle)?.werte || null;
+export const MESS = [
+  ["bauch", "Bauchumfang", "cm", 1], ["fett", "Körperfett", "%", 1], ["puls", "Ruhepuls", "bpm", 0],
+  ["sys", "Blutdruck oben", "mmHg", 0], ["dia", "Blutdruck unten", "mmHg", 0], ["schlaf", "Schlaf", "h", 1], ["schritte", "Schritte", "", 0]];
+export function series(key) { return S.vals.filter(v => v.quelle === "messung" && v.werte?.[key] != null && v.werte[key] !== "").map(v => ({ d: v.datum, v: +v.werte[key] })).sort((a, b) => a.d.localeCompare(b.d)); }
 export function weights() { return S.vals.filter(v => v.quelle === "gewicht" && +v.werte?.kg > 0).map(v => ({ d: v.datum, kg: +v.werte.kg })).sort((a, b) => a.d.localeCompare(b.d)); }
 // Trendgewicht wie bei MacroFactor: geglätteter Verlauf, der Tagesschwankungen ausgleicht.
 export function trendWeights() { const w = weights(); let t = null; return w.map(x => { t = t == null ? x.kg : t + 0.15 * (x.kg - t); return { ...x, trend: t }; }); }
