@@ -1,5 +1,8 @@
 // Trends: Wochenrückblick, Gewichtstrend, Energie & Eiweiß, Training pro Muskel, Sehne.
-import { S, VIEWS, esc, fmt, todayISO, addDays, monday, parse, dayTotals, goals, trainDays, trendWeights, dateLabel } from "./core.js";
+import { S, VIEWS, esc, fmt, todayISO, addDays, monday, parse, dayTotals, goals, trainDays, trendWeights, dateLabel, weekOf } from "./core.js";
+
+// Nur Tage mit echten Daten (Wochenplan oder Einträge) zählen für Durchschnitte
+const hasData = d => { const w = S.weeks[weekOf(d)] || {}; return Object.keys(w.plan || {}).length > 0 || Object.keys(w.kantine_tag || {}).length > 0 || S.log.some(e => e.datum === d); };
 import { tendonCard } from "./training.js";
 
 const W = 340, H = 150, PL = 34, PR = 8, PT = 10, PB = 22;
@@ -41,7 +44,7 @@ function barChart(rows, goal, cls, unit, label) {
 }
 
 export function weekReview(mon) {
-  const t = todayISO(), days = Array.from({ length: 7 }, (_, i) => addDays(mon, i)).filter(d => d <= t);
+  const t = todayISO(), days = Array.from({ length: 7 }, (_, i) => addDays(mon, i)).filter(d => d <= t && hasData(d));
   if (!days.length) return null;
   const tot = days.map(dayTotals), avgK = tot.reduce((a, x) => a + x.k, 0) / days.length, avgP = tot.reduce((a, x) => a + x.p, 0) / days.length;
   const tr = S.trainings.filter(x => x.datum >= mon && x.datum <= addDays(mon, 6)).length;
@@ -55,7 +58,7 @@ export function reviewCard(r, title) {
     <div><span class="muted">Ø Eiweiß</span><b class="num">${fmt(r.avgP)} g</b><small>Ziel ${fmt(g.eiweiss)} g</small></div>
     <div><span class="muted">Training</span><b class="num">${r.tr}/${r.plan}</b><small>Einheiten</small></div>
     <div><span class="muted">Gewicht</span><b class="num">${r.dW == null ? "–" : (r.dW > 0 ? "+" : r.dW < 0 ? "−" : "±") + fmt(Math.abs(r.dW), 1) + " kg"}</b><small>Trend</small></div></div>
-    ${r.n < 7 ? `<div class="muted">Bisher ${r.n} von 7 Tagen.</div>` : ""}</section>`;
+    ${r.n < 7 ? `<div class="muted">Ø aus ${r.n} Tag${r.n > 1 ? "en" : ""} mit Daten.</div>` : ""}</section>`;
 }
 
 function muscles(days = 7) {
@@ -68,8 +71,8 @@ function muscles(days = 7) {
 
 VIEWS.trends = () => {
   const t = todayISO(), g = goals(), days = Array.from({ length: 14 }, (_, i) => addDays(t, i - 13));
-  const rows = days.map(d => { const x = dayTotals(d); return { d, k: x.k, p: x.p, open: x.open, today: d === t }; });
-  const last7 = rows.slice(-7), avg = k => last7.reduce((a, r) => a + r[k], 0) / 7;
+  const rows = days.map(d => { const ok = hasData(d), x = ok ? dayTotals(d) : { k: 0, p: 0, open: 0 }; return { d, k: x.k, p: x.p, open: x.open, today: d === t, ok }; });
+  const last7 = rows.slice(-7).filter(r => r.ok), avg = k => last7.length ? last7.reduce((a, r) => a + r[k], 0) / last7.length : 0;
   const tw = trendWeights(), cur = tw[tw.length - 1], ago = d => [...tw].reverse().find(p => p.d <= addDays(t, -d));
   const d7 = cur && ago(7) ? cur.trend - ago(7).trend : null, d30 = cur && ago(30) ? cur.trend - ago(30).trend : null;
   const sgn = v => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "±") + fmt(Math.abs(v), 1) + " kg";
@@ -78,8 +81,8 @@ VIEWS.trends = () => {
   <section class="card"><div class="row"><h2>Gewicht</h2><button class="small ghost" data-act="gewicht">+ Gewicht</button></div>
     <div class="kpis three"><div><span class="muted">Trend</span><b class="num">${cur ? fmt(cur.trend, 1) + " kg" : "–"}</b></div><div><span class="muted">7 Tage</span><b class="num">${sgn(d7)}</b></div><div><span class="muted">30 Tage</span><b class="num">${sgn(d30)}</b></div></div>
     ${weightChart()}</section>
-  <section class="card"><div class="row"><h2>Energie</h2><span class="muted num">Ø 7 Tage ${fmt(avg("k"))} kcal</span></div>${barChart(rows.map(r => ({ d: r.d, v: r.k, open: r.open, today: r.today })), g.kcal, "b-basil", "kcal", "Kalorien der letzten 14 Tage")}</section>
-  <section class="card"><div class="row"><h2>Eiweiß</h2><span class="muted num">Ø 7 Tage ${fmt(avg("p"))} g</span></div>${barChart(rows.map(r => ({ d: r.d, v: r.p, today: r.today })), g.eiweiss, "b-ice", "g", "Eiweiß der letzten 14 Tage")}</section>
+  <section class="card"><div class="row"><h2>Energie</h2><span class="muted num">${last7.length ? `Ø ${last7.length} Tage ${fmt(avg("k"))} kcal` : "noch keine Daten"}</span></div>${barChart(rows.map(r => ({ d: r.d, v: r.k, open: r.open, today: r.today })), g.kcal, "b-basil", "kcal", "Kalorien der letzten 14 Tage")}</section>
+  <section class="card"><div class="row"><h2>Eiweiß</h2><span class="muted num">${last7.length ? `Ø ${last7.length} Tage ${fmt(avg("p"))} g` : ""}</span></div>${barChart(rows.map(r => ({ d: r.d, v: r.p, today: r.today })), g.eiweiss, "b-ice", "g", "Eiweiß der letzten 14 Tage")}</section>
   <section class="card"><h2>Training</h2>
     <div class="kpis four">${wk4.map(m => `<div><span class="muted">ab ${short(m)}</span><b class="num">${S.trainings.filter(x => x.datum >= m && x.datum <= addDays(m, 6)).length}</b></div>`).join("")}</div>
     ${muscles()}</section>
