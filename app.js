@@ -39,7 +39,7 @@ const SLOTL = { frueh: "Früh", mittag: "Mittag", abend: "Abend", snack: "Snack"
 VIEWS.heute = () => {
   const t = todayISO(), d = S.date || t, isToday = d === t, tl = dayTimeline(d), g = goals();
   const k = tl.reduce((s, x) => s + x.k, 0), p = tl.reduce((s, x) => s + x.p, 0), rest = g.kcal - k, open = tl.filter(x => x.pending).length;
-  const train = trainDays().includes(dayKey(d)), mon = monday(d), water = +(val(d, "wasser")?.ml) || 0, kg = val(d, "gewicht")?.kg;
+  const train = trainDays().includes(dayKey(d)), mon = monday(d), water = +(val(d, "wasser")?.ml) || 0, kg = val(d, "gewicht")?.kg, cardio = val(d, "cardio");
   const head = isToday ? (rest >= 0 ? `Noch ${fmt(rest)} kcal bis zum Ziel` : `${fmt(-rest)} kcal über dem Ziel`) : d < t ? `${fmt(k)} kcal · ${fmt(p)} g Eiweiß` : `Geplant: ${fmt(k)} kcal`;
   const strip = Array.from({ length: 7 }, (_, i) => { const dd = addDays(mon, i), l = DAYS[i][1], has = dd < t && dayTimeline(dd).some(x => x.entry || x.kantine && !x.open);
     return `<button class="ds ${dd === d ? "now" : ""} ${dd === t ? "is-today" : ""} ${dd < t ? "past" : ""}" data-act="day" data-date="${dd}" aria-label="${dateLabel(dd)}" aria-pressed="${dd === d}"><span>${l}</span><i class="${trainDays().includes(DAYS[i][0]) ? "tr" : has ? "ok" : ""}"></i></button>`; }).join("");
@@ -54,6 +54,7 @@ VIEWS.heute = () => {
       <div class="track ice"><i style="width:${Math.min(100, p / g.eiweiss * 100)}%"></i></div></div>
     <div class="seg chips">${train ? `<span class="chip">Trainingstag</span>` : `<span class="chip">Ruhetag</span>`}
       <button class="chip ice" data-act="wasser-direkt" aria-label="250 ml Wasser eintragen">Wasser ${water ? fmt(water / 1000, 2) + " l" : "eintragen"} +</button>
+      ${cardio ? `<button class="chip gold" data-act="cardio">${esc(cardio.art || "Cardio")} ${fmt(cardio.minuten)} min · ~${fmt(cardio.kcal)} kcal</button>` : ""}
       <button class="chip" data-act="gewicht">${kg ? fmt(kg, 1) + " kg" : "Gewicht eintragen"}</button>
       ${open ? `<span class="chip gold">${open} Foto${open > 1 ? "s" : ""} wartet auf Schätzung</span>` : ""}</div></section>
   ${tendonCard(true) && train && isToday ? tendonCard(true) : ""}

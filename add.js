@@ -41,6 +41,7 @@ ACT.plus = () => {
       <button class="qa" data-act="quick"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19h14M7 15l8-8 3 3-8 8H7z"/></svg>Schnell eintragen</button>
       <button class="qa" data-act="gewicht"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 10a4 4 0 0 1 6 0l-2 2"/></svg>Gewicht</button>
       <button class="qa" data-act="wasser"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg>Wasser +250 ml<small>${water ? fmt(water / 1000, 2) + " l heute" : ""}</small></button>
+      <button class="qa" data-act="cardio"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8M10 9 8 5H6"/></svg>Cardio${val(day(), "cardio") ? `<small>${fmt(val(day(), "cardio").minuten)} min eingetragen</small>` : ""}</button>
       ${work ? `<button class="qa" data-act="kantine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h16a8 8 0 0 1-16 0zM12 5v4M8 7v2M16 7v2"/></svg>Kantine</button>` : `<button class="qa" data-go="training"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M18 4v16M3 8v8M21 8v8M6 12h12"/></svg>Training</button>`}
     </div>
     ${rc.length ? `<div class="eyebrow">Zuletzt gegessen</div><div class="recent">${rc.map((e, i) => `<button class="rc" data-act="recent" data-i="${i}"><b>${esc(e.name)}</b><span class="num">${fmt(e.kcal)} kcal · ${fmt(e.eiweiss)} g</span></button>`).join("")}</div>` : ""}`,
@@ -138,6 +139,23 @@ ACT.gewicht = () => {
   sh => sh.querySelector("#gf").onsubmit = async e => { e.preventDefault(); const kg = Math.round(+new FormData(e.target).get("kg") * 10) / 10; closeSheet(); buzz(15); render(); await setVal("gewicht", { kg }); toast(`${fmt(kg, 1)} kg gespeichert`); });
 };
 ACT.wasser = async () => { const ml = (+(val(day(), "wasser")?.ml) || 0) + 250; closeSheet(); buzz(15); render(); await setVal("wasser", { ml }); toast(`Wasser: ${fmt(ml / 1000, 2)} l`); };
+
+// ---------- Cardio (Ergometer usw.) ----------
+// Kalorien aus Watt: mechanische Arbeit / Wirkungsgrad ~22 %; ohne Watt grobe Schätzung über die Dauer.
+export const cardioKcal = (min, watt) => watt > 0 ? Math.round(watt * min * 60 / 4184 / 0.22) : Math.round(min * 6);
+ACT.cardio = () => {
+  const c = val(day(), "cardio") || {};
+  openSheet(`<div class="sheet-head"><h2>Cardio</h2><span class="muted">${esc(relLabel(day()))}</span></div>
+    <form id="cf" class="form"><label class="wide">Art<input name="art" value="${esc(c.art || "Ergometer")}" maxlength="40"></label>
+    <label>Minuten<input name="minuten" type="number" inputmode="numeric" min="1" max="600" required value="${c.minuten || ""}"></label>
+    <label>Watt (Ø, falls bekannt)<input name="watt" type="number" inputmode="numeric" min="0" max="600" value="${c.watt || ""}"></label>
+    <div class="wide total" id="ck"></div><button class="wide">Speichern</button></form>`,
+  sh => { const f = sh.querySelector("#cf"), out = sh.querySelector("#ck");
+    const calc = () => { const k = cardioKcal(+f.minuten.value || 0, +f.watt.value || 0); out.innerHTML = `ca. <b class="num">${fmt(k)} kcal</b> verbraucht`; return k; };
+    f.addEventListener("input", calc); calc();
+    f.onsubmit = async e => { e.preventDefault(); const w = { art: f.art.value.trim() || "Cardio", minuten: +f.minuten.value, watt: +f.watt.value || null, kcal: calc() };
+      closeSheet(); buzz(15); await setVal("cardio", w); render(); toast(`${w.art}: ${w.minuten} min · ca. ${fmt(w.kcal)} kcal`); }; });
+};
 
 // ---------- Barcode ----------
 const OFF = "https://world.openfoodfacts.org/api/v2/product/";

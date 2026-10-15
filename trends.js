@@ -48,15 +48,16 @@ export function weekReview(mon) {
   if (!days.length) return null;
   const tot = days.map(dayTotals), avgK = tot.reduce((a, x) => a + x.k, 0) / days.length, avgP = tot.reduce((a, x) => a + x.p, 0) / days.length;
   const tr = S.trainings.filter(x => x.datum >= mon && x.datum <= addDays(mon, 6)).length;
+  const cardio = S.vals.filter(v => v.quelle === "cardio" && v.datum >= mon && v.datum <= addDays(mon, 6)).reduce((a, v) => a + (+v.werte?.minuten || 0), 0);
   const tw = trendWeights(), wEnd = [...tw].reverse().find(p => p.d <= addDays(mon, 6)), wStart = [...tw].reverse().find(p => p.d < mon);
-  return { mon, n: days.length, avgK, avgP, tr, plan: trainDays().length, dW: wEnd && wStart ? wEnd.trend - wStart.trend : null };
+  return { mon, n: days.length, avgK, avgP, tr, cardio, plan: trainDays().length, dW: wEnd && wStart ? wEnd.trend - wStart.trend : null };
 }
 export function reviewCard(r, title) {
   if (!r) return ""; const g = goals();
   return `<section class="card review"><div class="eyebrow">${esc(title)} · ${short(r.mon)}–${short(addDays(r.mon, 6))}</div>
     <div class="kpis"><div><span class="muted">Ø Energie</span><b class="num">${fmt(r.avgK)}</b><small>Ziel ${fmt(g.kcal)} kcal</small></div>
     <div><span class="muted">Ø Eiweiß</span><b class="num">${fmt(r.avgP)} g</b><small>Ziel ${fmt(g.eiweiss)} g</small></div>
-    <div><span class="muted">Training</span><b class="num">${r.tr}/${r.plan}</b><small>Einheiten</small></div>
+    <div><span class="muted">Training</span><b class="num">${r.tr}/${r.plan}</b><small>Kraft${r.cardio ? ` · ${fmt(r.cardio)} min Cardio` : ""}</small></div>
     <div><span class="muted">Gewicht</span><b class="num">${r.dW == null ? "–" : (r.dW > 0 ? "+" : r.dW < 0 ? "−" : "±") + fmt(Math.abs(r.dW), 1) + " kg"}</b><small>Trend</small></div></div>
     ${r.n < 7 ? `<div class="muted">Ø aus ${r.n} Tag${r.n > 1 ? "en" : ""} mit Daten.</div>` : ""}</section>`;
 }
