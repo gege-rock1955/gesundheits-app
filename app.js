@@ -1,0 +1,392 @@
+// Wochenteller – Hauptteil: Laden, Ansichten Heute/Woche/Einkauf/Mehr, Navigation, Login.
+import { sb, S, ACT, VIEWS, hooks, DEMO, $, esc, fmt, q, all, put, flush, toast, buzz, status, DAYS, AREA, isoWeek, iso, todayISO, addDays, dayKey, monday, weekOf, dateLabel, relLabel,
+  portion, goals, trainDays, dayTimeline, val, weekRow, addN, breakdown, imgTag, hydrateImgs, moveImagesPrivate } from "./core.js";
+import { closeSheet, nutrTable } from "./add.js";
+import { tendonCard, SK } from "./training.js";
+import { weekReview, reviewCard } from "./trends.js";
+import { todayBalanceChip } from "./koerper.js";
+import { streakChip } from "./profil.js";
+
+// ---------- Laden ----------
+async function loadAll() {
+  status("Synchronisiere …");
+  const t = todayISO();
+  const [ing, rec, wks, st, set, fav, deals, dev, ex, plans, log, vals, trs, sets] = await Promise.all([
+    q(sb.from("zutaten").select("*")), q(sb.from("rezepte").select("*")),
+    all(() => sb.from("wochen").select("*").order("woche")),
+    q(sb.from("bestand").select("*")), q(sb.from("einstellungen").select("*")),
+    q(sb.from("favoriten").select("*")), q(sb.from("angebote").select("*").gte("bis", t)),
+    q(sb.from("geraete").select("*")), q(sb.from("uebungen").select("*")),
+    q(sb.from("trainingsplaene").select("*").eq("aktiv", true)),
+    all(() => sb.from("eintraege").select("*").order("created_at")),
+    all(() => sb.from("tageswerte").select("*").order("datum")),
+    all(() => sb.from("trainings").select("*").order("datum")),
+    all(() => sb.from("saetze").select("*").order("created_at"))]);
+  S.ing = Object.fromEntries(ing.map(x => [x.id, x])); S.rec = Object.fromEntries(rec.map(x => [x.id, x]));
+  S.weeks = Object.fromEntries(wks.map(x => [x.woche, x]));
+  S.stock = Object.fromEntries(st.map(x => [x.zutat_id, +x.menge])); S.set = Object.fromEntries(set.map(x => [x.key, x.value]));
+  S.fav = Object.fromEntries(fav.map(x => [x.id, x])); S.deals = deals;
+  S.dev = Object.fromEntries(dev.map(x => [x.id, x])); S.ex = Object.fromEntries(ex.map(x => [x.id, x])); S.plans = plans;
+  S.log = log; S.vals = vals; S.trainings = trs; S.sets = sets;
+  S.date = S.date || t; S.week = ensureWeek(isoWeek()); S.ready = true;
+  status(""); flush(); moveImagesPrivate();
+}
+function ensureWeek(w) { return S.weeks[w] = S.weeks[w] || { woche: w, plan: {}, kantine_tag: {} }; }
+async function saveWeek(w) { await put("wochen", "upsert", { woche: w.woche, plan: w.plan || {}, kantine_tag: w.kantine_tag || {} }); }
+
+// ---------- Heute ----------
+const gear = `<button class="icon" data-go="profil" aria-label="Profil und Einstellungen"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>`;
+const SLOTL = { frueh: "Früh", mittag: "Mittag", abend: "Abend", snack: "Snack" };
+
+VIEWS.heute = () => {
+  const t = todayISO(), d = S.date || t, isToday = d === t, tl = dayTimeline(d), g = goals(d);
+  const k = tl.reduce((s, x) => s + x.k, 0), p = tl.reduce((s, x) => s + x.p, 0), rest = g.kcal - k, open = tl.filter(x => x.pending).length;
+  const train = trainDays().includes(dayKey(d)), mon = monday(d), water = +(val(d, "wasser")?.ml) || 0, kg = val(d, "gewicht")?.kg, cardio = val(d, "cardio");
+  const head = isToday ? (rest >= 0 ? `Noch ${fmt(rest)} kcal bis zum Ziel` : `${fmt(-rest)} kcal über dem Ziel`) : d < t ? `${fmt(k)} kcal · ${fmt(p)} g Eiweiß` : `Geplant: ${fmt(k)} kcal`;
+  const strip = Array.from({ length: 7 }, (_, i) => { const dd = addDays(mon, i), l = DAYS[i][1], has = dd < t && dayTimeline(dd).some(x => x.entry || x.kantine && !x.open);
+    return `<button class="ds ${dd === d ? "now" : ""} ${dd === t ? "is-today" : ""} ${dd < t ? "past" : ""}" data-act="day" data-date="${dd}" aria-label="${dateLabel(dd)}" aria-pressed="${dd === d}"><span>${l}</span><i class="${trainDays().includes(DAYS[i][0]) ? "tr" : has ? "ok" : ""}"></i></button>`; }).join("");
+  const done = S.trainings.some(x => x.datum === d), plan = S.plans[0], deal = S.deals[0];
+  const rv = isToday && ["so", "mo"].includes(dayKey(t)) ? (dayKey(t) === "so" ? reviewCard(weekReview(mon), "Deine Woche") : reviewCard(weekReview(addDays(mon, -7)), "Letzte Woche")) : "";
+  return `<section class="hero"><div class="row"><span class="muted" style="font-size:14px">${isToday ? dateLabel(d) : `<b>${esc(relLabel(d))}</b> · ${dateLabel(d, { day: "numeric", month: "long" })}`}</span>
+      <span class="hero-nav"><button class="icon" data-act="shift" data-n="-1" aria-label="Vorheriger Tag"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>${isToday ? "" : `<button class="small ghost" data-act="day" data-date="${t}">Heute</button>`}<button class="icon" data-act="shift" data-n="1" aria-label="Nächster Tag"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>${gear}</span></div>
+    <h2>${head}</h2><div class="strip" role="group" aria-label="Tage dieser Woche">${strip}</div></section>
+  <section class="card"><div class="meter"><div class="row"><b>Energie</b><span class="muted"><b class="v">${fmt(k)}</b> / ${fmt(g.kcal)} kcal</span></div>
+      <div class="track ${k > g.kcal ? "over" : ""}"><i style="width:${Math.min(100, k / g.kcal * 100)}%"></i></div></div>
+    <div class="meter"><div class="row"><b>Eiweiß</b><span class="muted"><b class="v">${fmt(p)}</b> / ${fmt(g.eiweiss)} g</span></div>
+      <div class="track ice"><i style="width:${Math.min(100, p / g.eiweiss * 100)}%"></i></div></div>
+    ${(() => { let n = {}; tl.forEach(x => { n = addN(n, x.n || { kcal: x.k, eiweiss: x.p }); }); const g2 = (k, l, dd = 0) => `<span><b class="num">${n["_miss_" + k] && n[k] != null ? "≥" : ""}${n[k] == null ? "–" : fmt(n[k], dd)}</b> ${l}</span>`;
+      return `<div class="minis">${g2("kh", "g KH")}${g2("zucker", "g Zucker")}${g2("fett", "g Fett")}${g2("salz", "g Salz", 1)}</div>`; })()}
+    <div class="seg chips">${isToday ? streakChip() : ""}${todayBalanceChip(d)}${train ? `<span class="chip">Trainingstag</span>` : `<span class="chip">Ruhetag</span>`}
+      <button class="chip ice" data-act="wasser-sheet">Wasser ${water ? fmt(water / 1000, 2) + " l" : "eintragen"}</button>
+      ${cardio ? `<button class="chip gold" data-act="cardio">${esc(cardio.art || "Cardio")} ${fmt(cardio.minuten)} min · ~${fmt(cardio.kcal)} kcal</button>` : ""}
+      <button class="chip" data-act="gewicht">${kg ? fmt(kg, 1) + " kg" : "Gewicht eintragen"}</button>
+      ${open ? `<span class="chip gold">${open} Foto${open > 1 ? "s" : ""} wartet auf Schätzung</span>` : ""}</div></section>
+  ${(S.set.supps || []).length ? `<div class="supps" role="group" aria-label="Supplements">${S.set.supps.map(x => { const on = !!(val(d, "supps") || {})[x.n]; return `<button class="chip ${on ? "" : "off"}" data-act="supp" data-n="${esc(x.n)}" data-date="${d}" aria-pressed="${on}">${on ? "✓ " : ""}${esc(x.n)}${x.dosis ? ` <small>${esc(x.dosis)}</small>` : ""}</button>`; }).join("")}</div>` : ""}
+  ${tendonCard(true) && train && isToday ? tendonCard(true) : ""}
+  <div class="row" style="padding:4px 4px 0"><h2>${isToday ? "Dein Tag" : "Essen"}</h2><button class="small ghost" data-go="woche">Woche planen</button></div>
+  <div class="tl">${tl.length ? tl.map(x => { const tag = x.entry ? `button data-act="entry" data-id="${x.entry.id}"` : x.kantine ? `button data-act="kantine"` : x.recs ? `button data-act="detail" data-recs="${x.recs.join(",")}" data-date="${d}" data-time="${x.time || ""}"` : "div";
+      return `<${tag} class="tli ${x.planned ? "plan" : ""} ${x.pending ? "pending" : ""} ${x.open ? "open" : ""}"><span class="slot num">${esc(x.time || "")}</span><span class="tm"><b>${esc(x.name)}</b><span class="muted">${esc(x.det)}</span></span><span class="tv"><b>${x.pending ? "?" : fmt(x.k)}</b> kcal<br>${x.pending ? "–" : fmt(x.p)} g</span></${tag.split(" ")[0]}>`; }).join("")
+    : `<div class="empty">Noch nichts eingetragen. Tippe unten auf „+“.</div>`}</div>
+  ${rv}
+  ${deal && isToday ? `<button class="radar" data-go="einkauf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12l-8 8-9-9V3h8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg><span><b>Radar:</b> ${esc(deal.produkt)} bei ${esc(deal.haendler)}${S.deals.length > 1 ? ` · +${S.deals.length - 1} weitere` : ""}</span></button>` : ""}
+  ${(() => { try { return isToday && localStorage.getItem(SK) ? `<button class="radar run" data-go="training"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M18 4v16M3 8v8M21 8v8M6 12h12"/></svg><span><b>Training läuft</b> – tippen zum Fortsetzen</span></button>` : ""; } catch (e) { return ""; } })()}
+  ${train && plan && isToday && !done ? `<section class="card"><div class="row"><h2>Training</h2><span class="muted">${esc(plan.name)}</span></div>
+    <div class="seg">${plan.tage.map((x, i) => `<button data-act="start" data-i="${i}" data-plan="${esc(plan.id)}">${esc(x.name)}</button>`).join("")}</div></section>` : ""}`;
+};
+ACT.day = t => { S.date = t.dataset.date; buzz(8); render(); };
+ACT.shift = t => shiftDay(+t.dataset.n);
+ACT["wasser-direkt"] = () => ACT.wasser();
+function shiftDay(n) { S.date = addDays(S.date || todayISO(), n); buzz(8); render(); const v = $("#view"); v.classList.remove("slide-l", "slide-r"); void v.offsetWidth; v.classList.add(n > 0 ? "slide-l" : "slide-r"); }
+
+// Wischen zwischen Tagen
+let sx = null, sy = 0;
+document.addEventListener("touchstart", e => { if (S.view !== "heute" || $("#sheet") || !e.target.closest("#view")) return; sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+document.addEventListener("touchend", e => { if (sx == null) return; const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; sx = null; if (Math.abs(dx) > 70 && Math.abs(dy) < 50) shiftDay(dx < 0 ? 1 : -1); }, { passive: true });
+
+// ---------- Woche ----------
+VIEWS.woche = () => {
+  const w = ensureWeek(weekOf(S.date || todayISO())), mon = monday(S.date || todayISO());
+  const opts = r => `<option value="">– nichts –</option>` + Object.entries(S.rec).filter(([id]) => id !== "salat" && id !== "shake").sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, x]) => `<option value="${esc(id)}" ${r === id ? "selected" : ""}>${esc(x.name)}</option>`).join("");
+  return `<section class="card"><div class="row"><div class="eyebrow">Woche ${esc(w.woche)}</div><span><button class="icon" data-act="wk" data-n="-7" aria-label="Vorherige Woche"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button><button class="icon" data-act="wk" data-n="7" aria-label="Nächste Woche"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></span></div>
+  ${DAYS.map(([d, l, work], i) => { const ds = addDays(mon, i), p = (w.plan || {})[d] || {}, o = (w.kantine_tag || {})[d] || {}, it = dayTimeline(ds), k = it.reduce((s, x) => s + x.k, 0), pr = it.reduce((s, x) => s + x.p, 0);
+    return `<div class="day"><div class="row"><h3>${l} <span class="muted" style="font-weight:400">${dateLabel(ds, { day: "numeric", month: "numeric" })}</span></h3><span class="num muted">${fmt(k)} kcal · ${fmt(pr)} g</span></div>
+      <select data-w="${esc(w.woche)}" data-d="${d}" data-f="rezept" aria-label="Abendessen ${l}">${opts(p.rezept)}</select>
+      <label class="check"><input type="checkbox" data-w="${esc(w.woche)}" data-d="${d}" data-f="salat" ${p.salat ? "checked" : ""}> + Salat</label>
+      ${work ? `<div class="grid2"><label>Mittag kcal<input type="number" inputmode="numeric" data-w="${esc(w.woche)}" data-d="${d}" data-k="kcal" value="${o.kcal || ""}" placeholder="${S.set.kantine?.kcal || 700}"></label><label>Eiweiß g<input type="number" inputmode="numeric" data-w="${esc(w.woche)}" data-d="${d}" data-k="eiweiss" value="${o.eiweiss || ""}" placeholder="${S.set.kantine?.eiweiss || 25}"></label>
+        <label style="grid-column:1/-1">Was gab's? (optional)<input data-w="${esc(w.woche)}" data-d="${d}" data-k="notiz" value="${esc(o.notiz || "")}" maxlength="140"></label></div>` : ""}</div>`; }).join("")}</section>`;
+};
+ACT.wk = t => { S.date = addDays(S.date || todayISO(), +t.dataset.n); render(); };
+
+// ---------- Einkauf ----------
+function needs() {
+  const w = S.week, por = {};
+  DAYS.forEach(([d]) => { const p = (w?.plan || {})[d] || {};
+    if (p.rezept && S.rec[p.rezept]) por[p.rezept] = (por[p.rezept] || 0) + 1;
+    if (p.salat && S.rec.salat) por.salat = (por.salat || 0) + 1;
+    if (S.rec.shake) por.shake = (por.shake || 0) + 1; });
+  const need = {}, by = {};
+  Object.entries(por).forEach(([rid, n]) => { const r = S.rec[rid]; const per = r.portionen || 1; const f = (rid === "salat" || rid === "shake") ? n : Math.ceil(n / per);
+    (r.zutaten || []).forEach(z => { need[z.id] = (need[z.id] || 0) + z.menge * f; (by[z.id] = by[z.id] || new Set()).add(r.kurz || r.name); }); });
+  return { need, by };
+}
+VIEWS.einkauf = () => {
+  const { need, by } = needs(); const groups = {}, covered = [];
+  let checked = {}; try { checked = JSON.parse(localStorage.getItem((DEMO ? "demo-" : "") + "ek-" + S.week.woche) || "{}"); } catch (e) { }
+  Object.entries(need).forEach(([id, qty]) => { const i = S.ing[id]; if (!i) return; const miss = qty - (S.stock[id] || 0);
+    if (miss <= 0.001) { covered.push(i.name); return; }
+    const buy = i.packung ? `${Math.ceil(miss / i.packung - 1e-9)}× ${i.pack_name || fmt(i.packung) + " " + i.einheit}` : `${Math.ceil(miss - 1e-9)} ${i.einheit === "g" ? "g" : "Stk"}`;
+    const deal = S.deals.find(x => x.fav === id || (S.fav[x.fav]?.name || "").toLowerCase().includes(i.name.toLowerCase().split(" ")[0]));
+    (groups[i.bereich || "Sonstiges"] = groups[i.bereich || "Sonstiges"] || []).push({ id, name: i.name, buy, deal, det: [...by[id]].join(", ") }); });
+  const keys = Object.keys(groups).sort((a, b) => AREA.indexOf(a) - AREA.indexOf(b));
+  const list = keys.length ? keys.map(g => `<div class="eyebrow" style="margin-top:6px">${esc(g)}</div>${groups[g].map(x => `<label class="li ${checked[x.id] ? "done" : ""}"><input type="checkbox" data-ek="${esc(x.id)}" ${checked[x.id] ? "checked" : ""}><div><div class="nm">${esc(x.name)}</div><div class="muted">${esc(x.det)}${x.deal ? ` · <b style="color:var(--paprika)">${esc(x.deal.haendler)} ${esc(x.deal.preis)}</b>` : ""}</div></div><span class="buy num">${esc(x.buy)}</span></label>`).join("")}`).join("") : `<div class="muted">Alles da – nichts zu kaufen.</div>`;
+  const deals = S.deals.slice().sort((a, b) => (a.bis || "").localeCompare(b.bis || ""));
+  return `<section class="card"><h2>Einkaufsliste</h2><div class="list">${list}</div>
+    ${covered.length ? `<div class="muted"><b>Schon da:</b> ${covered.map(esc).join(", ")}</div>` : ""}
+    <button class="ghost" data-act="eingekauft">Einkauf erledigt → Vorrat auffüllen</button></section>
+  <section class="card"><h2>Favoriten-Radar</h2>${deals.length ? deals.map(d => `<div class="li deal"><span class="chip warn">${esc(d.haendler)}</span><div><div class="nm">${esc(d.produkt)}</div><div class="muted">${esc(d.bedingung || "")}${d.bis ? " · bis " + new Date(d.bis + "T12:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) : ""}${d.pruefen ? ` · <b>prüfen:</b> ${esc(d.pruefen)}` : ""}</div></div><div class="price num">${esc(d.preis || "")}<small>${esc(d.grundpreis || "")}</small></div></div>`).join("") : `<div class="muted">Keine aktuellen Treffer. Der Scan läuft montags.</div>`}</section>`;
+};
+ACT.eingekauft = async () => {
+  const { need } = needs(); const rows = [];
+  Object.entries(need).forEach(([id, qty]) => { const i = S.ing[id]; if (!i) return; const miss = qty - (S.stock[id] || 0); if (miss <= 0) return;
+    const add = i.packung ? Math.ceil(miss / i.packung - 1e-9) * i.packung : Math.ceil(miss - 1e-9); S.stock[id] = (S.stock[id] || 0) + add; rows.push({ zutat_id: id, menge: S.stock[id] }); });
+  try { localStorage.removeItem((DEMO ? "demo-" : "") + "ek-" + S.week.woche); } catch (x) { }
+  render(); if (rows.length) await put("bestand", "upsert", rows); toast("Vorrat aufgefüllt");
+};
+
+// ---------- Mehr ----------
+// ---------- Menü & Unterseiten ----------
+const IC = {
+  einkauf: '<path d="M4 6h2l2 10h10l2-7H7"/><circle cx="9" cy="20" r="1"/><circle cx="17" cy="20" r="1"/>',
+  woche: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  rezepte: '<path d="M4 5h11a3 3 0 0 1 3 3v12H7a3 3 0 0 1-3-3z"/><path d="M8 9h6M8 13h6"/>',
+  vorrat: '<path d="M4 7h16v13H4zM4 7l2-3h12l2 3M9 11h6"/>',
+  verlauf: '<path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4M12 8v4l3 2"/>',
+  messung: '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
+  geraete: '<path d="M6 4v16M18 4v16M3 8v8M21 8v8M6 12h12"/>',
+  fotos: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  daten: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
+  ziele: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".5"/>',
+  demo: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>',
+  logout: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/>'
+};
+const tile = (k, label, go, small = "", badge = 0) => `<button class="tile" ${go.startsWith("act:") ? `data-act="${go.slice(4)}"` : `data-go="${go}"`}>${badge ? `<span class="badge num">${badge}</span>` : ""}<svg viewBox="0 0 24 24" aria-hidden="true">${IC[k]}</svg>${label}${small ? `<small>${small}</small>` : ""}</button>`;
+VIEWS.menu = () => { const photos = S.log.filter(e => e.foto_pfad && !e.foto_gesichert).length;
+  return `<section class="card"><h2>Essen & Einkauf</h2><div class="tiles">
+    ${tile("einkauf", "Einkauf", "einkauf", "Liste & Angebote", S.deals.length)}${tile("woche", "Woche planen", "woche", "Abendessen & Kantine")}${tile("rezepte", "Rezepte", "rezepte", `${Object.keys(S.rec).length} gespeichert`)}
+    ${tile("vorrat", "Vorrat", "vorrat", "Kühlschrank & Lager")}${tile("fotos", "Essensfotos", "fotos", photos ? `${photos} online` : "")}${tile("verlauf", "Verlauf", "verlauf", "ansehen & löschen")}</div></section>
+  <section class="card"><h2>Körper & Training</h2><div class="tiles">
+    ${tile("messung", "Messwerte", "act:messung", "Bauch, Puls, Schlaf …")}${tile("geraete", "Geräte", "geraete", "Gewichtsstufen")}${tile("ziele", "Ziele", "ziele", "kcal, Eiweiß, Tage")}</div></section>
+  <section class="card"><h2>App</h2><div class="tiles">
+    ${tile("daten", "Daten", "daten", "Export & Import")}${DEMO ? tile("demo", "Demo zurücksetzen", "act:demo-reset", "frische Beispieldaten") : `<a class="tile" href="?demo" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true">${IC.demo}</svg>Demo<small>zum Ausprobieren</small></a>`}${tile("logout", "Abmelden", "act:logout")}</div>
+    <div class="muted">${DEMO ? "Demo-Version: Alle Daten bleiben nur in diesem Browser." : "Deine Daten liegen in deiner eigenen Supabase-Datenbank (Frankfurt)."}</div></section>`; };
+VIEWS.ziele = () => { const g = goals(), td = trainDays(), k = S.set.kantine || { kcal: 700, eiweiss: 25 }, p = S.set.profil || {}, a = S.set.aktivitaet || {};
+  const lines = (arr, f) => (arr || []).map(f).join("\n");
+  return `<form id="ziele" class="stack"><section class="card"><h2>Tagesziele</h2><div class="grid2">
+    <label>kcal Mo–Fr<input name="kcal" type="number" inputmode="numeric" value="${g.kcal_wt}" min="1000" max="5000"></label><label>kcal Sa & So<input name="kcal_we" type="number" inputmode="numeric" value="${g.kcal_we}" min="1000" max="6000"></label>
+    <label>Eiweiß g pro Tag<input name="eiweiss" type="number" inputmode="numeric" value="${g.eiweiss}" min="40" max="300"></label><span></span>
+    <fieldset class="days"><legend>Trainingstage</legend>${DAYS.map(([d, l]) => `<label class="check"><input type="checkbox" name="td" value="${d}" ${td.includes(d) ? "checked" : ""}>${l}</label>`).join("")}</fieldset>
+    <label>Kantine pauschal kcal<input name="kk" type="number" inputmode="numeric" value="${k.kcal}"></label><label>Kantine pauschal Eiweiß g<input name="kp" type="number" inputmode="numeric" value="${k.eiweiss}"></label></div></section>
+  <section class="card"><h2>Für die Energiebilanz</h2><div class="grid2">
+    <label>Geschlecht<select name="sex"><option value="m" ${p.geschlecht !== "w" ? "selected" : ""}>männlich</option><option value="w" ${p.geschlecht === "w" ? "selected" : ""}>weiblich</option></select></label>
+    <label>Alter<input name="alter" type="number" inputmode="numeric" value="${p.alter || 40}"></label><label>Größe cm<input name="groesse" type="number" inputmode="numeric" value="${p.groesse_cm || 178}"></label>
+    <label>Gewicht kg (falls nie gewogen)<input name="kg" type="number" inputmode="decimal" step="0.1" value="${p.gewicht_kg || ""}"></label>
+    <label>Alltag Mo–Fr (Faktor)<input name="fwt" type="number" inputmode="decimal" step="0.05" min="1" max="2.2" value="${a.wt || 1.35}"></label><label>Alltag Sa & So (Faktor)<input name="fwe" type="number" inputmode="decimal" step="0.05" min="1" max="2.2" value="${a.we || 1.2}"></label>
+    <label>Krafttraining kcal pro Einheit<input name="fkraft" type="number" inputmode="numeric" value="${a.kraft || 200}"></label></div>
+    <div class="muted">Faktor 1,2 = viel Sitzen · 1,35 = Büro mit etwas Bewegung · 1,5 = viel auf den Beinen. Cardio wird extra gezählt.</div></section>
+  <section class="card"><h2>Wasser-Gefäße</h2><label>Eins pro Zeile: Name und ml<textarea name="gef" rows="3">${esc(lines(S.set.gefaesse || [{ n: "Glas", ml: 300 }, { n: "Flasche", ml: 500 }, { n: "Große Flasche", ml: 750 }], x => `${x.n} ${x.ml}`))}</textarea></label></section>
+  <section class="card"><h2>Supplements</h2><label>Eins pro Zeile, Dosis nach einem Bindestrich<textarea name="supps" rows="3" placeholder="Kreatin - 5 g\nVitamin D - 1000 IE">${esc(lines(S.set.supps, x => x.dosis ? `${x.n} - ${x.dosis}` : x.n))}</textarea></label>
+    <div class="muted">Erscheinen auf „Heute“ zum Abhaken und im Profil als Wochenübersicht.</div></section>
+  <button>Alles speichern</button></form>`; };
+VIEWS.rezepte = () => `<section class="card"><h2>Rezepte</h2>${Object.values(S.rec).map(r => { const [k, p] = portion(r.id), b = breakdown(r.id); return `<details><summary>${esc(r.name)} <span class="muted num">${fmt(k)} kcal · ${fmt(p)} g Eiweiß pro Portion</span></summary>${imgTag(r.bild, r.name)}${nutrTable(b.rows, b.total)}<p class="muted">${r.portionen > 1 ? `Rezept ergibt ${r.portionen} Portionen. ` : ""}${esc(r.zubereitung || "")}</p></details>`; }).join("") || `<div class="muted">Keine Rezepte.</div>`}
+  <div class="muted">Neue Rezepte schickst du mir am einfachsten im Chat (Foto oder Text), ich trage sie mit Nährwerten ein.</div></section>`;
+VIEWS.vorrat = () => `<section class="card"><h2>Vorrat</h2><div class="grid2">${Object.entries(S.ing).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, i]) => `<label>${esc(i.name)}<input type="number" inputmode="decimal" data-stock="${esc(id)}" value="${S.stock[id] || 0}"><span class="muted">${i.einheit === "g" ? "g / ml" : "Stück"}</span></label>`).join("")}</div></section>`;
+VIEWS.geraete = () => `<section class="card"><h2>Geräte</h2><div class="muted">Stufe = um wie viel kg + und − im Training ändern. Start = Gewicht beim ersten Mal.</div>
+  ${Object.values(S.dev).sort((a, b) => a.name.localeCompare(b.name)).map(d => `<div class="devrow"><b>${esc(d.name)}</b>
+    <label>Stufe kg<input type="number" inputmode="decimal" step="0.5" min="0.5" data-dev="${esc(d.id)}" data-f="gewicht_schritt" value="${+d.gewicht_schritt || 1}"></label>
+    <label>Start kg<input type="number" inputmode="decimal" step="0.5" min="0" data-dev="${esc(d.id)}" data-f="gewicht_min" value="${+d.gewicht_min || 3}"></label>
+    <button class="del" data-act="dev-del" data-id="${esc(d.id)}" aria-label="${esc(d.name)} löschen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>`).join("") || `<div class="muted">Noch keine Geräte.</div>`}
+  <details><summary>+ Gerät hinzufügen</summary><form id="newdev" class="grid2" style="margin-top:8px"><label style="grid-column:1/-1">Name<input name="name" required></label><label>Stufe kg<input name="schritt" type="number" step="0.5" value="1"></label><label>Start kg<input name="min" type="number" step="0.5" value="3"></label><button style="grid-column:1/-1">Speichern</button></form></details></section>`;
+VIEWS.fotos = () => { const photos = S.log.filter(e => e.foto_pfad && !e.foto_gesichert);
+  return `<section class="card"><h2>Essensfotos</h2><div class="muted" id="fotostat">${photos.length} Foto${photos.length === 1 ? "" : "s"} online · Speicher wird geprüft …</div>
+    <div class="muted">Fotos werden beim Hochladen auf ca. 150 KB verkleinert. 1 GB kostenloser Speicher reicht für mehrere tausend Fotos.</div>
+    ${photos.length ? `<button class="ghost" data-act="fotos-zip">Alle Fotos herunterladen (ZIP)</button>` : ""}
+    ${S.zipped?.length ? `<button class="ghost danger" data-act="fotos-del">${S.zipped.length} gesicherte Fotos online löschen</button><div class="muted">Fotos, die noch auf eine Schätzung warten, bleiben online.</div>` : ""}</section>`; };
+VIEWS.daten = () => `<section class="card"><h2>Daten</h2>
+    <div class="muted">Sichere regelmäßig alle Daten auf dein Gerät, etwa einmal im Monat. Der Export öffnet sich auch in Excel.</div>
+    <button class="ghost" data-act="export">Alle Daten exportieren (ZIP)</button>
+    <label class="btn ghost filebtn" for="imp-in">Gewicht aus anderer App importieren (CSV)</label><input id="imp-in" type="file" accept=".csv,.txt,text/csv,text/plain" hidden>
+    <div class="muted">Funktioniert mit Exporten aus Samsung Health, Google Fit, Waagen-Apps oder Excel: Jede Zeile braucht ein Datum und ein Gewicht in kg.</div></section>`;
+
+// ---------- Verlauf: alles ansehen und löschen ----------
+const VF = [["alle", "Alles"], ["essen", "Essen"], ["gewicht", "Gewicht"], ["messung", "Messwerte"], ["cardio", "Cardio"], ["wasser", "Wasser"], ["training", "Training"]];
+const trash = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>`;
+function verlaufItems(d) {
+  const f = S.vf || "alle", on = k => f === "alle" || f === k, out = [], w = weekRow(d), kt = (w.kantine_tag || {})[dayKey(d)];
+  if (on("essen")) { S.log.filter(e => e.datum === d).forEach(e => out.push({ t: e.name, s: e.status === "offen" ? "Foto – Schätzung offen" : `${fmt(e.kcal)} kcal · ${fmt(e.eiweiss)} g`, open: `data-act="entry" data-id="${esc(e.id)}"`, del: `data-kind="e" data-id="${esc(e.id)}"` }));
+    if (kt?.kcal) out.push({ t: "Kantine", s: `${fmt(kt.kcal)} kcal · ${fmt(kt.eiweiss)} g${kt.notiz ? " · " + kt.notiz : ""}`, del: `data-kind="k" data-d="${d}"` }); }
+  S.vals.filter(v => v.datum === d && on(v.quelle)).forEach(v => { const x = v.werte || {};
+    const s = v.quelle === "gewicht" ? `${fmt(x.kg, 1)} kg` : v.quelle === "wasser" ? `${fmt((x.ml || 0) / 1000, 2)} l` : v.quelle === "cardio" ? `${x.art || "Cardio"} · ${fmt(x.minuten)} min · ~${fmt(x.kcal)} kcal` : Object.entries(x).map(([k, val]) => `${k} ${fmt(val, 1)}`).join(" · ");
+    out.push({ t: { gewicht: "Gewicht", wasser: "Wasser", cardio: "Cardio", messung: "Messwerte" }[v.quelle] || v.quelle, s, open: { gewicht: 'data-act="gewicht"', cardio: 'data-act="cardio"', messung: 'data-act="messung"', wasser: 'data-act="wasser-sheet"' }[v.quelle] ? `${{ gewicht: 'data-act="gewicht"', cardio: 'data-act="cardio"', messung: 'data-act="messung"', wasser: 'data-act="wasser-sheet"' }[v.quelle]} data-date="${d}"` : "", del: `data-kind="tw" data-d="${d}" data-q="${esc(v.quelle)}"` }); });
+  if (on("training")) S.trainings.filter(x => x.datum === d).forEach(x => out.push({ t: x.tag_name || "Training", s: `${S.sets.filter(y => y.training_id === x.id).length} Sätze${x.schmerz_wert != null ? ` · Sehne ${x.schmerz_wert}/10` : ""}`, open: `data-act="tr-open" data-id="${esc(x.id)}"`, del: `data-kind="tr" data-id="${esc(x.id)}"` }));
+  return out;
+}
+VIEWS.verlauf = () => {
+  const n = S.vn || 14, t = todayISO(), days = Array.from({ length: n }, (_, i) => addDays(t, -i));
+  const blocks = days.map(d => ({ d, items: verlaufItems(d) })).filter(b => b.items.length);
+  return `<div class="seg" role="group" aria-label="Filter">${VF.map(([k, l]) => `<button class="small" data-act="vf" data-k="${k}" aria-pressed="${(S.vf || "alle") === k}">${l}</button>`).join("")}</div>
+  <section class="card">${blocks.length ? blocks.map(b => `<div class="vday"><div class="eyebrow">${["Heute", "Gestern"].includes(relLabel(b.d)) ? `${relLabel(b.d)} · ${dateLabel(b.d, { day: "numeric", month: "short" })}` : dateLabel(b.d, { weekday: "short", day: "numeric", month: "short" })}</div>${b.items.map(x => `<div class="vrow">${x.open ? `<button class="lrow tm" ${x.open}>` : `<span class="tm">`}<span><b>${esc(x.t)}</b><br><span class="muted">${esc(x.s)}</span></span>${x.open ? "</button>" : "</span>"}<span></span><button class="del" data-act="v-del" ${x.del} aria-label="${esc(x.t)} löschen">${trash}</button></div>`).join("")}</div>`).join("")
+    : `<div class="empty">In den letzten ${n} Tagen nichts gefunden.</div>`}
+  <button class="ghost small" data-act="vmore">Ältere Tage anzeigen</button></section>`;
+};
+ACT.vf = t => { S.vf = t.dataset.k; render(); };
+ACT.vmore = () => { S.vn = (S.vn || 14) + 30; render(); };
+ACT["v-del"] = async t => {
+  if (!t.classList.contains("sure")) { document.querySelectorAll(".del.sure").forEach(b => { b.classList.remove("sure"); b.innerHTML = trash; }); t.classList.add("sure"); t.textContent = "Löschen?"; return; }
+  const k = t.dataset.kind; buzz(20);
+  if (k === "e") { const e = S.log.find(x => x.id === t.dataset.id); S.log = S.log.filter(x => x.id !== t.dataset.id); render(); if (e?.foto_pfad && !e.foto_gesichert) await sb.storage.from("fotos").remove([e.foto_pfad]); await put("eintraege", "delete", null, { id: t.dataset.id }); }
+  if (k === "tw") { const d = t.dataset.d, qq = t.dataset.q, old = S.vals.find(v => v.datum === d && v.quelle === qq); if (qq.startsWith("foto-") && old?.werte?.pfad) sb.storage.from("fotos").remove([old.werte.pfad]); S.vals = S.vals.filter(v => !(v.datum === d && v.quelle === qq)); render(); await put("tageswerte", "delete", null, { datum: d, quelle: qq }); }
+  if (k === "tr") { const id = t.dataset.id; S.trainings = S.trainings.filter(x => x.id !== id); S.sets = S.sets.filter(x => x.training_id !== id); render(); await put("saetze", "delete", null, { training_id: id }); await put("trainings", "delete", null, { id }); }
+  if (k === "k") { const d = t.dataset.d, w = ensureWeek(weekOf(d)); delete (w.kantine_tag || {})[dayKey(d)]; render(); await saveWeek(w); }
+  toast("Gelöscht");
+};
+ACT["dev-del"] = async t => {
+  if (!t.classList.contains("sure")) { t.classList.add("sure"); t.textContent = "Löschen?"; return; }
+  const id = t.dataset.id; delete S.dev[id]; render(); await put("geraete", "delete", null, { id }); toast("Gerät gelöscht");
+};
+ACT["demo-reset-bar"] = async t => { if (!t.dataset.sure) { t.dataset.sure = "1"; t.textContent = "Wirklich?"; return; } (await import("./demo.js")).resetDemo(true); try { localStorage.removeItem("outbox-demo"); localStorage.removeItem(SK); } catch (e) { } location.reload(); };
+ACT["demo-reset"] = async t => { if (!t.dataset.sure) { t.dataset.sure = "1"; t.querySelector("small").textContent = "nochmal tippen"; return; } (await import("./demo.js")).resetDemo(true); try { localStorage.removeItem("outbox-demo"); localStorage.removeItem(SK); } catch (e) { } location.reload(); };
+async function fotoStat() {
+  const el = $("#fotostat"); if (!el) return;
+  const { data } = await sb.storage.from("fotos").list(S.user.id, { limit: 1000 });
+  const n = data?.length || 0, mb = (data || []).reduce((a, x) => a + (+x.metadata?.size || 0), 0) / 1048576;
+  if ($("#fotostat")) $("#fotostat").textContent = `${n} Foto${n === 1 ? "" : "s"} online · ${fmt(mb, 1)} MB von 1.000 MB`;
+}
+ACT["fotos-zip"] = async t => {
+  const list = S.log.filter(e => e.foto_pfad && !e.foto_gesichert); if (!list.length) return;
+  t.disabled = true; t.textContent = "Lade Fotos …";
+  try {
+    const { zipSync } = await import("https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm"); const files = {}, ok = [];
+    for (const [i, e] of list.entries()) { t.textContent = `Lade Foto ${i + 1} von ${list.length} …`;
+      const { data } = await sb.storage.from("fotos").download(e.foto_pfad); if (!data) continue;
+      const nm = `${e.datum}_${(e.name || "essen").replace(/[^\wäöüÄÖÜß-]+/g, "-").slice(0, 40)}_${e.id.slice(0, 6)}.jpg`;
+      files[nm] = [new Uint8Array(await data.arrayBuffer()), { level: 0 }]; if (e.status !== "offen") ok.push(e.id); }
+    const blob = new Blob([zipSync(files)], { type: "application/zip" }), a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `essensfotos-${todayISO()}.zip`; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    S.zipped = ok; toast(`${Object.keys(files).length} Fotos heruntergeladen`);
+  } catch (e) { toast("Download fehlgeschlagen: " + (e.message || e), "warn"); }
+  render();
+};
+ACT["fotos-del"] = async t => {
+  if (t.dataset.sure !== "1") { t.dataset.sure = "1"; t.textContent = "Sicher? Die ZIP-Datei ist gespeichert?"; return; }
+  const list = S.log.filter(e => S.zipped?.includes(e.id)); t.disabled = true;
+  const { error } = await sb.storage.from("fotos").remove(list.map(e => e.foto_pfad));
+  if (error) return toast("Löschen fehlgeschlagen: " + error.message, "warn");
+  for (const e of list) { e.foto_gesichert = true; await put("eintraege", "update", { foto_gesichert: true }, { id: e.id }); }
+  S.zipped = []; render(); toast(`${list.length} Fotos online gelöscht`);
+};
+// ---------- Export ----------
+const TABLES = ["eintraege", "tageswerte", "trainings", "saetze", "wochen", "rezepte", "zutaten", "bestand", "einstellungen", "favoriten", "geraete", "uebungen", "trainingsplaene", "angebote", "filialen"];
+function csv(rows) {
+  if (!rows.length) return "";
+  const flat = rows.map(r => { const o = {}; Object.entries(r).forEach(([k, v]) => { if (k === "user_id") return; if (k === "werte" && v && typeof v === "object") Object.entries(v).forEach(([a, b]) => o[a] = b); else o[k] = v; }); return o; });
+  const cols = [...new Set(flat.flatMap(o => Object.keys(o)))];
+  const cell = v => { if (v == null) return ""; if (typeof v === "number") return String(v).replace(".", ","); if (typeof v === "object") v = JSON.stringify(v); v = String(v); return /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+  return "\ufeff" + [cols.join(";"), ...flat.map(o => cols.map(c => cell(o[c])).join(";"))].join("\r\n");
+}
+ACT.export = async t => {
+  t.disabled = true; const old = t.textContent;
+  try {
+    const { zipSync, strToU8 } = await import("https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm"); const data = {}, files = {};
+    for (const tb of TABLES) { t.textContent = `Lade ${tb} …`; data[tb] = await all(() => sb.from(tb).select("*")); }
+    files["alle_daten.json"] = strToU8(JSON.stringify({ exportiert: new Date().toISOString(), app: "Wochenteller", daten: data }, null, 1));
+    ["eintraege", "tageswerte", "trainings", "saetze"].forEach(tb => { if (data[tb].length) files[`${tb}.csv`] = strToU8(csv(data[tb])); });
+    const blob = new Blob([zipSync(files)], { type: "application/zip" }), a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `wochenteller-export-${todayISO()}.zip`; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast(`Export fertig · ${Object.values(data).reduce((n, r) => n + r.length, 0)} Zeilen`);
+  } catch (e) { toast("Export fehlgeschlagen: " + (e.message || e), "warn"); }
+  t.disabled = false; t.textContent = old;
+};
+
+// ---------- Import: Gewicht aus beliebiger CSV/Text-Datei ----------
+function parseWeights(text) {
+  const byDay = {};
+  text.split(/\r?\n/).forEach(line => {
+    let d = null, m;
+    if ((m = line.match(/(\d{4})-(\d{2})-(\d{2})/))) d = `${m[1]}-${m[2]}-${m[3]}`;
+    else if ((m = line.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/))) d = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    if (!d || d > todayISO() || d < "1990-01-01") return;
+    const rest = line.replace(m[0], " ").replace(/\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?/g, " ").replace(/\b\d{10,}\b/g, " ");
+    const nums = (rest.match(/\d{2,3}(?:[.,]\d{1,2})?/g) || []).map(x => +x.replace(",", ".")).filter(x => x >= 35 && x <= 300);
+    if (nums.length) (byDay[d] = byDay[d] || []).push(nums[0]);
+  });
+  return Object.entries(byDay).map(([d, a]) => ({ d, kg: Math.round(a.reduce((s, x) => s + x, 0) / a.length * 10) / 10 })).sort((a, b) => a.d.localeCompare(b.d));
+}
+document.addEventListener("change", async e => {
+  if (e.target.id !== "imp-in") return; const f = e.target.files?.[0]; if (!f) return;
+  const rows = parseWeights(await f.text()), have = new Set(S.vals.filter(v => v.quelle === "gewicht").map(v => v.datum)), neu = rows.filter(r => !have.has(r.d));
+  if (!rows.length) return toast("Keine Gewichtswerte erkannt. Schick mir die Datei im Chat, dann passe ich den Import an.", "warn");
+  const { openSheet, closeSheet: close } = await import("./add.js");
+  openSheet(`<div class="sheet-head"><h2>Gewicht importieren</h2><span class="muted">${esc(f.name)}</span></div>
+    <div class="kpis three"><div><span class="muted">Gefunden</span><b class="num">${rows.length}</b></div><div><span class="muted">Neu</span><b class="num">${neu.length}</b></div><div><span class="muted">Bereich</span><b class="num">${fmt(Math.min(...rows.map(r => r.kg)), 0)}–${fmt(Math.max(...rows.map(r => r.kg)), 0)}</b></div></div>
+    <div class="muted">Von ${dateLabel(rows[0].d, { day: "numeric", month: "short", year: "numeric" })} bis ${dateLabel(rows[rows.length - 1].d, { day: "numeric", month: "short", year: "numeric" })}. Tage, die schon ein Gewicht haben, bleiben unverändert.</div>
+    <div class="tablewrap"><table class="mtab"><thead><tr><th scope="col">Datum</th><th scope="col">kg</th></tr></thead><tbody>${neu.slice(-5).map(r => `<tr><th scope="row">${r.d}</th><td>${fmt(r.kg, 1)}</td></tr>`).join("")}</tbody></table></div>
+    <button id="imp-go" ${neu.length ? "" : "disabled"}>${neu.length} Werte importieren</button>`,
+  sh => sh.querySelector("#imp-go").onclick = async () => {
+    const add = neu.map(r => ({ datum: r.d, quelle: "gewicht", werte: { kg: r.kg, import: f.name.slice(0, 60) } }));
+    S.vals.push(...add); close(); render();
+    for (let i = 0; i < add.length; i += 500) await put("tageswerte", "upsert", add.slice(i, i + 500));
+    toast(`${add.length} Gewichtswerte importiert`); });
+  e.target.value = "";
+});
+
+ACT.back = () => go(S.prev && S.prev !== S.view ? S.prev : "profil");
+ACT.logout = async () => { await sb.auth.signOut(); location.reload(); };
+
+// ---------- Rendern & Navigation ----------
+const TITLES = { heute: "Heute", woche: "Woche planen", einkauf: "Einkauf", training: "Training", trends: "Körper", koerper: "Körper", profil: "Profil", uebungen: "Übungen", menu: "Profil", ziele: "Ziele & Einstellungen", rezepte: "Rezepte", vorrat: "Vorrat", geraete: "Geräte", fotos: "Essensfotos", daten: "Daten", verlauf: "Verlauf" };
+const SUB = ["woche", "einkauf", "ziele", "rezepte", "vorrat", "geraete", "fotos", "daten", "verlauf", "uebungen"];
+function render() {
+  if (!S.ready) return;
+  document.querySelectorAll("#tabs [data-v]").forEach(b => b.setAttribute("aria-current", b.dataset.v === S.view ? "page" : "false"));
+  $("header.top").hidden = S.view === "heute"; $("#title").textContent = TITLES[S.view] || "";
+  $("#back").hidden = !SUB.includes(S.view);
+  $("#view").innerHTML = VIEWS[S.view]();
+  if (S.view === "fotos") fotoStat();
+  hydrateImgs($("#view"));
+}
+function go(v) { if (!S.ready) return; v = { menu: "profil", trends: "koerper" }[v] || v; closeSheet(); if (!SUB.includes(S.view)) S.prev = S.view; S.view = v; if (v !== "heute" && v !== "woche") S.date = S.date || todayISO(); render(); window.scrollTo(0, 0); }
+hooks.render = render; hooks.go = go;
+
+document.addEventListener("click", async e => {
+  const t = e.target.closest("[data-go],[data-act],#tabs [data-v]"); if (!t || t.disabled) return;
+  if (t.dataset.v && t.closest("#tabs")) { buzz(6); return go(t.dataset.v); }
+  if (t.dataset.go) return go(t.dataset.go);
+  const fn = ACT[t.dataset.act]; if (fn) { e.preventDefault(); await fn(t, e); }
+});
+document.addEventListener("change", async e => {
+  const t = e.target;
+  if (t.dataset.f) { const w = ensureWeek(t.dataset.w), d = t.dataset.d; w.plan = w.plan || {}; w.plan[d] = { ...(w.plan[d] || {}), [t.dataset.f]: t.type === "checkbox" ? t.checked : t.value }; render(); await saveWeek(w); toast("Gespeichert"); }
+  if (t.dataset.k) { const w = ensureWeek(t.dataset.w), d = t.dataset.d; w.kantine_tag = w.kantine_tag || {}; const o = { ...(w.kantine_tag[d] || {}) };
+    if (t.dataset.k === "notiz") { if (t.value.trim()) o.notiz = t.value.trim(); else delete o.notiz; } else { const v = parseFloat(t.value); if (v > 0) o[t.dataset.k] = v; else delete o[t.dataset.k]; }
+    if (o.kcal) w.kantine_tag[d] = o; else delete w.kantine_tag[d]; render(); await saveWeek(w); toast("Gespeichert"); }
+  if (t.dataset.dev) { const d = S.dev[t.dataset.dev]; if (!d) return; d[t.dataset.f] = Math.max(0, parseFloat(String(t.value).replace(",", ".")) || 0); await put("geraete", "update", { [t.dataset.f]: d[t.dataset.f] }, { id: d.id }); toast("Gespeichert"); }
+  if (t.dataset.stock) { const v = Math.max(0, parseFloat(t.value) || 0); S.stock[t.dataset.stock] = v; await put("bestand", "upsert", { zutat_id: t.dataset.stock, menge: v }); toast("Vorrat gespeichert"); }
+  if (t.dataset.ek) { let c = {}; try { c = JSON.parse(localStorage.getItem((DEMO ? "demo-" : "") + "ek-" + S.week.woche) || "{}"); } catch (x) { } c[t.dataset.ek] = t.checked; try { localStorage.setItem((DEMO ? "demo-" : "") + "ek-" + S.week.woche, JSON.stringify(c)); } catch (x) { } t.closest(".li").classList.toggle("done", t.checked); buzz(10); }
+});
+document.addEventListener("submit", async e => {
+  if (e.target.id === "newdev") { e.preventDefault(); const f = new FormData(e.target); const name = f.get("name").trim(); if (!name) return;
+    const id = name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const row = { id, name, gewicht_schritt: +f.get("schritt") || 1, gewicht_min: +f.get("min") || 3 };
+    S.dev[id] = row; render(); await put("geraete", "upsert", row); toast("Gerät gespeichert"); }
+  if (e.target.id === "ziele") { e.preventDefault(); const f = new FormData(e.target), num = k => parseFloat(String(f.get(k) || "").replace(",", "."));
+    const v = { ...(S.set.ziel || {}), kcal: num("kcal") || 2200, kcal_we: num("kcal_we") || (num("kcal") || 2200) + 300, eiweiss: num("eiweiss") || 170 };
+    const td = f.getAll("td"), k = { kcal: num("kk") || 700, eiweiss: num("kp") || 25 };
+    const prof = { ...(S.set.profil || {}), geschlecht: f.get("sex"), alter: num("alter") || 40, groesse_cm: num("groesse") || 178, ...(num("kg") ? { gewicht_kg: num("kg") } : {}) };
+    const akt = { wt: num("fwt") || 1.35, we: num("fwe") || 1.2, kraft: num("fkraft") || 200 };
+    const gef = String(f.get("gef") || "").split("\n").map(l => l.trim().match(/^(.*?)\s+(\d+)\s*(ml)?$/)).filter(Boolean).map(m => ({ n: m[1], ml: +m[2] }));
+    const supps = String(f.get("supps") || "").split("\n").map(l => l.trim()).filter(Boolean).map(l => { const [n, ...d] = l.split(/\s+-\s+/); return { n: n.trim(), dosis: d.join(" - ").trim() }; });
+    Object.assign(S.set, { ziel: v, trainingstage: td, kantine: k, profil: prof, aktivitaet: akt, gefaesse: gef, supps }); render();
+    await put("einstellungen", "upsert", [{ key: "ziel", value: v }, { key: "trainingstage", value: td }, { key: "kantine", value: k }, { key: "profil", value: prof }, { key: "aktivitaet", value: akt }, { key: "gefaesse", value: gef }, { key: "supps", value: supps }]); toast("Gespeichert"); }
+});
+
+// ---------- Login ----------
+function loginView(msg = "", email = "") {
+  S.ready = false; $("#tabs").hidden = true; $("header.top").hidden = false; $("#back").hidden = true; $("#title").textContent = "Wochenteller";
+  $("#view").innerHTML = `<section class="card"><h2>Anmelden</h2><p class="muted">Deine Daten liegen in deiner eigenen Datenbank. Nur du kommst mit diesem Login daran.</p>
+    <form id="login" class="grid2" style="grid-template-columns:1fr"><label>E-Mail<input name="email" type="email" autocomplete="email" required></label><label>Passwort<input name="pw" type="password" autocomplete="current-password" required></label>
+    <button>Anmelden</button></form>${msg ? `<div class="hint">${esc(msg)}</div>` : ""}</section>`;
+  const form = $("#login"); form.email.value = email;
+  form.onsubmit = async e => { e.preventDefault(); const c = { email: String(form.email.value || "").trim(), password: String(form.pw.value || "") };
+    const { error } = await sb.auth.signInWithPassword(c);
+    if (error) loginView("Anmeldung fehlgeschlagen: " + (error.message === "Email not confirmed" ? "Bitte zuerst den Link in der Bestätigungs-Mail antippen." : error.message), c.email); else boot(); };
+}
+async function boot() {
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return loginView();
+  S.user = data.session.user; $("#tabs").hidden = false;
+  if (DEMO && !$(".demo-bar")) { const b = document.createElement("div"); b.className = "demo-bar"; b.innerHTML = `Demo-Version · Daten nur in diesem Browser <button data-act="demo-reset-bar">Zurücksetzen</button>`; document.body.prepend(b); }
+  try { await loadAll(); } catch (e) { $("#view").innerHTML = `<div class="empty">Keine Verbindung zur Datenbank. <button class="ghost" onclick="location.reload()">Neu laden</button></div>`; status("Offline"); return; }
+  render();
+}
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => { });
+boot();

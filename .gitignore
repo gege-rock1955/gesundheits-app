@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+
+# Persönliche Startdaten bleiben außerhalb des öffentlichen Repos
+supabase/*startdaten*.sql
