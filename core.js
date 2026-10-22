@@ -126,7 +126,7 @@ export function streak(upTo = todayISO()) {
 export const trainDays = () => S.set.trainingstage || ["di", "do", "so"];
 export const weekRow = s => S.weeks[weekOf(s)] || {};
 
-// Alles, was an einem Tag gegessen wird: Plan (Shake, Kantine, Abendessen) + eigene Einträge.
+// Alles, was an einem Tag gegessen wird: Plan (Shake, Mittagessen, Abendessen) + eigene Einträge.
 export function dayTimeline(s) {
   const d = dayKey(s), work = DAYS.find(x => x[0] === d)[2], w = weekRow(s), plan = (w.plan || {})[d] || {}, out = [];
   const logs = S.log.filter(e => e.datum === s), past = s < todayISO();
@@ -137,8 +137,8 @@ export function dayTimeline(s) {
   }
   if (work) {
     const base = S.set.kantine || { kcal: 700, eiweiss: 25 }, o = (w.kantine_tag || {})[d];
-    if (o?.kcal) out.push({ slot: "mittag", name: "Kantine", det: o.notiz || "eingetragen", k: +o.kcal, p: +o.eiweiss || 0, kantine: true, n: { kcal: +o.kcal, eiweiss: +o.eiweiss || 0 } });
-    else if (!logs.some(e => e.slot === "mittag")) out.push({ slot: "mittag", name: "Kantine", det: "pauschal geschätzt – tippe zum Eintragen", k: +base.kcal, p: +base.eiweiss, kantine: true, open: true });
+    if (o?.kcal) out.push({ slot: "mittag", name: "Mittagessen", det: o.notiz || "eingetragen", k: +o.kcal, p: +o.eiweiss || 0, kantine: true, n: { kcal: +o.kcal, eiweiss: +o.eiweiss || 0 } });
+    else if (!logs.some(e => e.slot === "mittag")) out.push({ slot: "mittag", name: "Mittagessen", det: "pauschal geschätzt – tippe zum Eintragen", k: +base.kcal, p: +base.eiweiss, kantine: true, open: true });
   }
   if (plan.rezept && S.rec[plan.rezept]) {
     let [k, p] = portion(plan.rezept); let det = past ? "laut Plan" : "geplant", n = breakdown(plan.rezept).total, recs = [plan.rezept];

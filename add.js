@@ -1,5 +1,5 @@
 // Eintragen: Plus-Menü mit Foto, Barcode, Schnell-Eintrag, Zuletzt gegessen, Gewicht, Wasser.
-import { sb, S, ACT, $, esc, fmt, SLOTS, slotTime, NUTR, breakdown, addN, imgTag, hydrateImgs, DAYS, MESS, put, toast, buzz, uid, slotNow, todayISO, dayKey, val, render, go, relLabel } from "./core.js";
+import { sb, S, ACT, $, esc, fmt, weekOf, SLOTS, slotTime, NUTR, breakdown, addN, imgTag, hydrateImgs, DAYS, MESS, put, toast, buzz, uid, slotNow, todayISO, dayKey, val, render, go, relLabel } from "./core.js";
 
 // ---------- Blatt (Bottom Sheet) ----------
 let lastFocus = null, stopCam = null;
@@ -46,12 +46,25 @@ ACT.plus = () => {
       <button class="qa" data-act="messung"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>Messwerte</button>
       <button class="qa" data-act="wasser-sheet"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg>Wasser<small>${water ? fmt(water / 1000, 2) + " l heute" : ""}</small></button>
       <button class="qa" data-act="cardio"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8M10 9 8 5H6"/></svg>Cardio${val(day(), "cardio") ? `<small>${fmt(val(day(), "cardio").minuten)} min eingetragen</small>` : ""}</button>
-      ${work ? `<button class="qa" data-act="kantine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h16a8 8 0 0 1-16 0zM12 5v4M8 7v2M16 7v2"/></svg>Kantine</button>` : `<button class="qa" data-go="training"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M18 4v16M3 8v8M21 8v8M6 12h12"/></svg>Training</button>`}
+      ${work ? `<button class="qa" data-act="kantine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h16a8 8 0 0 1-16 0zM12 5v4M8 7v2M16 7v2"/></svg>Mittagessen</button>` : `<button class="qa" data-go="training"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M18 4v16M3 8v8M21 8v8M6 12h12"/></svg>Training</button>`}
     </div>
     ${rc.length ? `<div class="eyebrow">Zuletzt gegessen</div><div class="recent">${rc.map((e, i) => `<button class="rc" data-act="recent" data-i="${i}"><b>${esc(e.name)}</b><span class="num">${fmt(e.kcal)} kcal · ${fmt(e.eiweiss)} g</span></button>`).join("")}</div>` : ""}`,
   sh => { sh._recent = rc; sh.querySelector("#foto-in").addEventListener("change", ev => { const f = ev.target.files?.[0]; if (f) photoForm(f); }); });
 };
-ACT.kantine = () => { closeSheet(); S.view = "woche"; render(); setTimeout(() => document.querySelector(`input[data-d="${dayKey(day())}"][data-k="kcal"]`)?.focus(), 50); };
+// Mittagessen direkt eintragen (wird im Wochenplan beim Tag gespeichert)
+ACT.kantine = t => { fromT(t); const d = day(), w = S.weeks[weekOf(d)] || {}, o = (w.kantine_tag || {})[dayKey(d)] || {};
+  openSheet(`<div class="sheet-head"><h2>Mittagessen</h2><span class="muted">${esc(relLabel(d))} · 11:30</span></div>
+    <form id="mf2" class="form"><label class="wide">Was gab's?<input name="notiz" maxlength="140" value="${esc(o.notiz || "")}" placeholder="z. B. Lachs, Kartoffelsalat 100 g, Salat, 1 Ei"></label>
+    <label>kcal<input name="kcal" type="number" inputmode="numeric" min="0" required value="${o.kcal || ""}"></label><label>Eiweiß g<input name="eiweiss" type="number" inputmode="decimal" min="0" value="${o.eiweiss || ""}"></label>
+    <p class="muted wide">Werte unklar? Schick mir ein Foto im Chat, ich schätze sie und trage sie ein.</p>
+    <button class="wide">Speichern</button>${o.kcal ? `<button type="button" class="ghost danger wide" data-act="mittag-del">Eintrag löschen</button>` : ""}</form>`,
+  sh => sh.querySelector("#mf2").onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target), k = dayKey(d), wk = S.weeks[weekOf(d)] = S.weeks[weekOf(d)] || { woche: weekOf(d), plan: {}, kantine_tag: {} };
+    wk.kantine_tag = { ...(wk.kantine_tag || {}), [k]: { kcal: +f.get("kcal"), eiweiss: +String(f.get("eiweiss") || 0).replace(",", "."), ...(String(f.get("notiz")).trim() ? { notiz: String(f.get("notiz")).trim() } : {}) } };
+    closeSheet(); buzz(15); render(); await put("wochen", "upsert", { woche: wk.woche, plan: wk.plan || {}, kantine_tag: wk.kantine_tag }); toast("Mittagessen gespeichert"); });
+};
+ACT["mittag-del"] = async t => { if (t.dataset.sure !== "1") { t.dataset.sure = "1"; t.textContent = "Wirklich löschen?"; return; }
+  const d = day(), wk = S.weeks[weekOf(d)]; if (!wk) return; const kt = { ...(wk.kantine_tag || {}) }; delete kt[dayKey(d)]; wk.kantine_tag = kt;
+  closeSheet(); render(); await put("wochen", "upsert", { woche: wk.woche, plan: wk.plan || {}, kantine_tag: kt }); toast("Gelöscht"); };
 ACT.recent = t => { const e = $("#sheet .sheet")?._recent?.[+t.dataset.i]; if (!e) return;
   saveEntry({ name: e.name, kcal: e.kcal, eiweiss: e.eiweiss, kh: e.kh, fett: e.fett, menge: e.menge, einheit: e.einheit, slot: day() === todayISO() ? slotNow() : e.slot, quelle: "zuletzt" }); };
 
@@ -134,7 +147,7 @@ async function photoForm(file) {
   const prev = URL.createObjectURL(blob);
   openSheet(`<div class="sheet-head"><h2>Foto vom Essen</h2><span class="muted num">${fmt(blob.size / 1024)} KB</span></div>
     <img class="shot" src="${prev}" alt="Dein Foto">
-    <form id="pf" class="form"><label class="wide">Was ist drauf? (optional)<input name="name" maxlength="120" placeholder="z. B. Kantine: Schnitzel, Kartoffelsalat" autocomplete="off"></label>
+    <form id="pf" class="form"><label class="wide">Was ist drauf? (optional)<input name="name" maxlength="120" placeholder="z. B. Mittag: Schnitzel, Kartoffelsalat" autocomplete="off"></label>
     ${slotSelect()}<span></span>
     <label>kcal (optional)<input name="kcal" type="number" inputmode="decimal" min="0"></label><label>Eiweiß g (optional)<input name="eiweiss" type="number" inputmode="decimal" min="0" step="0.1"></label>
     <p class="muted wide">Ohne Werte wird das Foto später geschätzt. Bis dahin zählt es mit 0 kcal.</p>

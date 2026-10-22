@@ -64,7 +64,7 @@ VIEWS.heute = () => {
   ${(S.set.supps || []).length ? `<div class="supps" role="group" aria-label="Supplements">${S.set.supps.map(x => { const on = !!(val(d, "supps") || {})[x.n]; return `<button class="chip ${on ? "" : "off"}" data-act="supp" data-n="${esc(x.n)}" data-date="${d}" aria-pressed="${on}">${on ? "✓ " : ""}${esc(x.n)}${x.dosis ? ` <small>${esc(x.dosis)}</small>` : ""}</button>`; }).join("")}</div>` : ""}
   ${tendonCard(true) && train && isToday ? tendonCard(true) : ""}
   <div class="row" style="padding:4px 4px 0"><h2>${isToday ? "Dein Tag" : "Essen"}</h2><button class="small ghost" data-go="woche">Woche planen</button></div>
-  <div class="tl">${tl.length ? tl.map(x => { const tag = x.entry ? `button data-act="entry" data-id="${x.entry.id}"` : x.kantine ? `button data-act="kantine"` : x.recs ? `button data-act="detail" data-recs="${x.recs.join(",")}" data-date="${d}" data-time="${x.time || ""}"` : "div";
+  <div class="tl">${tl.length ? tl.map(x => { const tag = x.entry ? `button data-act="entry" data-id="${x.entry.id}"` : x.kantine ? `button data-act="kantine" data-date="${d}"` : x.recs ? `button data-act="detail" data-recs="${x.recs.join(",")}" data-date="${d}" data-time="${x.time || ""}"` : "div";
       return `<${tag} class="tli ${x.planned ? "plan" : ""} ${x.pending ? "pending" : ""} ${x.open ? "open" : ""}"><span class="slot num">${esc(x.time || "")}</span><span class="tm"><b>${esc(x.name)}</b><span class="muted">${esc(x.det)}</span></span><span class="tv"><b>${x.pending ? "?" : fmt(x.k)}</b> kcal<br>${x.pending ? "–" : fmt(x.p)} g</span></${tag.split(" ")[0]}>`; }).join("")
     : `<div class="empty">Noch nichts eingetragen. Tippe unten auf „+“.</div>`}</div>
   ${rv}
@@ -152,7 +152,7 @@ const IC = {
 const tile = (k, label, go, small = "", badge = 0) => `<button class="tile" ${go.startsWith("act:") ? `data-act="${go.slice(4)}"` : `data-go="${go}"`}>${badge ? `<span class="badge num">${badge}</span>` : ""}<svg viewBox="0 0 24 24" aria-hidden="true">${IC[k]}</svg>${label}${small ? `<small>${small}</small>` : ""}</button>`;
 VIEWS.menu = () => { const photos = S.log.filter(e => e.foto_pfad && !e.foto_gesichert).length;
   return `<section class="card"><h2>Essen & Einkauf</h2><div class="tiles">
-    ${tile("einkauf", "Einkauf", "einkauf", "Liste & Angebote", S.deals.length)}${tile("woche", "Woche planen", "woche", "Abendessen & Kantine")}${tile("rezepte", "Rezepte", "rezepte", `${Object.keys(S.rec).length} gespeichert`)}
+    ${tile("einkauf", "Einkauf", "einkauf", "Liste & Angebote", S.deals.length)}${tile("woche", "Woche planen", "woche", "Mittag & Abend")}${tile("rezepte", "Rezepte", "rezepte", `${Object.keys(S.rec).length} gespeichert`)}
     ${tile("vorrat", "Vorrat", "vorrat", "Kühlschrank & Lager")}${tile("fotos", "Essensfotos", "fotos", photos ? `${photos} online` : "")}${tile("verlauf", "Verlauf", "verlauf", "ansehen & löschen")}</div></section>
   <section class="card"><h2>Körper & Training</h2><div class="tiles">
     ${tile("messung", "Messwerte", "act:messung", "Bauch, Puls, Schlaf …")}${tile("geraete", "Geräte", "geraete", "Gewichtsstufen")}${tile("ziele", "Ziele", "ziele", "kcal, Eiweiß, Tage")}</div></section>
@@ -166,7 +166,7 @@ VIEWS.ziele = () => { const g = goals(), td = trainDays(), k = S.set.kantine || 
     <label>Eiweiß g pro Tag<input name="eiweiss" type="number" inputmode="numeric" value="${g.eiweiss}" min="40" max="300"></label><span></span>
     <fieldset class="days"><legend>Trainingstage</legend>${DAYS.map(([d, l]) => `<label class="check"><input type="checkbox" name="td" value="${d}" ${td.includes(d) ? "checked" : ""}>${l}</label>`).join("")}</fieldset>
     <label style="grid-column:1/-1">Name für die Schmerz-Ampel<input name="painl" value="${esc(S.set.schmerz_label || "Sehne")}" maxlength="30"></label>
-    <label>Kantine pauschal kcal<input name="kk" type="number" inputmode="numeric" value="${k.kcal}"></label><label>Kantine pauschal Eiweiß g<input name="kp" type="number" inputmode="numeric" value="${k.eiweiss}"></label></div></section>
+    <label>Mittagessen pauschal kcal<input name="kk" type="number" inputmode="numeric" value="${k.kcal}"></label><label>Mittagessen pauschal Eiweiß g<input name="kp" type="number" inputmode="numeric" value="${k.eiweiss}"></label></div></section>
   <section class="card"><h2>Für die Energiebilanz</h2><div class="grid2">
     <label>Geschlecht<select name="sex"><option value="m" ${p.geschlecht !== "w" ? "selected" : ""}>männlich</option><option value="w" ${p.geschlecht === "w" ? "selected" : ""}>weiblich</option></select></label>
     <label>Alter<input name="alter" type="number" inputmode="numeric" value="${p.alter || 40}"></label><label>Größe cm<input name="groesse" type="number" inputmode="numeric" value="${p.groesse_cm || 178}"></label>
@@ -204,7 +204,7 @@ const trash = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 1
 function verlaufItems(d) {
   const f = S.vf || "alle", on = k => f === "alle" || f === k, out = [], w = weekRow(d), kt = (w.kantine_tag || {})[dayKey(d)];
   if (on("essen")) { S.log.filter(e => e.datum === d).forEach(e => out.push({ t: e.name, s: e.status === "offen" ? "Foto – Schätzung offen" : `${fmt(e.kcal)} kcal · ${fmt(e.eiweiss)} g`, open: `data-act="entry" data-id="${esc(e.id)}"`, del: `data-kind="e" data-id="${esc(e.id)}"` }));
-    if (kt?.kcal) out.push({ t: "Kantine", s: `${fmt(kt.kcal)} kcal · ${fmt(kt.eiweiss)} g${kt.notiz ? " · " + kt.notiz : ""}`, del: `data-kind="k" data-d="${d}"` }); }
+    if (kt?.kcal) out.push({ t: "Mittagessen", s: `${fmt(kt.kcal)} kcal · ${fmt(kt.eiweiss)} g${kt.notiz ? " · " + kt.notiz : ""}`, del: `data-kind="k" data-d="${d}"` }); }
   S.vals.filter(v => v.datum === d && on(v.quelle)).forEach(v => { const x = v.werte || {};
     const s = v.quelle === "gewicht" ? `${fmt(x.kg, 1)} kg` : v.quelle === "wasser" ? `${fmt((x.ml || 0) / 1000, 2)} l` : v.quelle === "cardio" ? `${x.art || "Cardio"} · ${fmt(x.minuten)} min · ~${fmt(x.kcal)} kcal` : Object.entries(x).map(([k, val]) => `${k} ${fmt(val, 1)}`).join(" · ");
     out.push({ t: { gewicht: "Gewicht", wasser: "Wasser", cardio: "Cardio", messung: "Messwerte" }[v.quelle] || v.quelle, s, open: { gewicht: 'data-act="gewicht"', cardio: 'data-act="cardio"', messung: 'data-act="messung"', wasser: 'data-act="wasser-sheet"' }[v.quelle] ? `${{ gewicht: 'data-act="gewicht"', cardio: 'data-act="cardio"', messung: 'data-act="messung"', wasser: 'data-act="wasser-sheet"' }[v.quelle]} data-date="${d}"` : "", del: `data-kind="tw" data-d="${d}" data-q="${esc(v.quelle)}"` }); });
