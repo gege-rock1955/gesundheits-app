@@ -1,5 +1,5 @@
 // Training: Pläne, Satz-Logging, Pausen-Timer, letzte Werte, Rekorde, Sehnen-Ampel.
-import { sb, S, ACT, VIEWS, DEMO, $, esc, fmt, q, put, toast, buzz, uid, todayISO, e1rm, render, relLabel } from "./core.js";
+import { sb, S, ACT, VIEWS, DEMO, $, esc, painLabel, fmt, q, put, toast, buzz, uid, todayISO, e1rm, render, relLabel } from "./core.js";
 
 const LEGS = ["beine", "quadrizeps", "oberschenkel", "beinbeuger", "waden", "wade", "gesäß", "po", "adduktoren", "abduktoren"];
 const isLeg = e => (e?.muskeln || []).some(m => LEGS.some(l => String(m).toLowerCase().includes(l)));
@@ -17,7 +17,7 @@ export function tendon() {
 export function tendonCard(compact = false) {
   const s = tendon(); if (!s) return "";
   const ic = { rot: `<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>`, gelb: `<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16h.01"/>`, gruen: `<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>` }[s.lvl];
-  return `<div class="ampel ${s.lvl}" role="status"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg><div><b>Achillessehne: ${s.label}</b>${compact ? "" : `<div>${s.text}</div>`}<div class="muted num">Letzte Werte: ${s.last.join(" · ")} von 10</div></div></div>`;
+  return `<div class="ampel ${s.lvl}" role="status"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg><div><b>${esc(painLabel())}: ${s.label}</b>${compact ? "" : `<div>${s.text}</div>`}<div class="muted num">Letzte Werte: ${s.last.join(" · ")} von 10</div></div></div>`;
 }
 
 // ---------- Muskelfigur: welche Muskeln diese Woche wie viele Sätze bekommen haben ----------
@@ -81,7 +81,7 @@ function sessionView() {
         <span class="prev">${last[si] ? `zuletzt ${fmt(last[si].gewicht, 1)} kg × ${last[si].wdh}` : ""}${st.pr ? ` <span class="chip gold">Rekord</span>` : ""}</span></div>`).join("")}
       <div class="row setbtns"><button class="small ghost" data-act="addset" data-u="${ui}">+ Satz</button>${s.sets[ui].length > 1 ? `<button class="small ghost" data-act="delset" data-u="${ui}">Letzten Satz entfernen</button>` : ""}</div></section>`; }).join("")}
   <button class="ghost" data-act="ex-pick">+ Übung hinzufügen</button>
-  <section class="card"><h3>Achillessehne nach dem Training</h3><div class="muted">0 = gar nichts, 10 = starke Schmerzen</div>
+  <section class="card"><h3>${esc(painLabel())} nach dem Training</h3><div class="muted">0 = gar nichts, 10 = starke Schmerzen</div>
     <div class="pain">${Array.from({ length: 11 }, (_, i) => `<button data-act="schmerz" data-v="${i}" aria-pressed="${s.schmerz === i}" class="p${i < 3 ? "g" : i < 5 ? "y" : "r"}">${i}</button>`).join("")}</div>
     <button data-act="fertig">Training speichern</button></section>`;
 }
@@ -199,7 +199,7 @@ ACT["tr-open"] = async t => {
   const by = {}; sets.forEach(x => (by[x.uebung_id] = by[x.uebung_id] || []).push(x));
   openSheet(`<div class="sheet-head"><h2>${esc(tr.tag_name || "Training")}</h2><span class="muted">${esc(relLabel(tr.datum))}</span></div>
     ${Object.entries(by).map(([id, xs]) => `<div><b>${esc(S.ex[id]?.name || id)}</b><div class="muted num">${xs.map(x => `${fmt(x.gewicht, 1)} kg × ${x.wdh}`).join(" · ")}</div></div>`).join("") || `<div class="muted">Keine Sätze gespeichert.</div>`}
-    ${tr.schmerz_wert != null ? `<div class="muted">Achillessehne: ${tr.schmerz_wert} von 10</div>` : ""}
+    ${tr.schmerz_wert != null ? `<div class="muted">${esc(painLabel())}: ${tr.schmerz_wert} von 10</div>` : ""}
     <button class="ghost danger" data-act="tr-del" data-id="${esc(tr.id)}">Training löschen</button>`);
 };
 ACT["tr-del"] = async t => {

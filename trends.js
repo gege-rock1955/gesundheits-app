@@ -1,5 +1,5 @@
 // Trends: Wochenrückblick, Gewichtstrend, Energie & Eiweiß, Training pro Muskel, Sehne.
-import { S, ACT, VIEWS, esc, fmt, todayISO, addDays, monday, parse, dayTotals, goals, trainDays, trendWeights, dateLabel, weekOf, MESS, series, render } from "./core.js";
+import { S, ACT, VIEWS, esc, painLabel, fmt, todayISO, addDays, monday, parse, dayTotals, goals, trainDays, trendWeights, dateLabel, weekOf, MESS, series, render } from "./core.js";
 
 // Nur Tage mit echten Daten (Wochenplan oder Einträge) zählen für Durchschnitte
 const hasData = d => { const w = S.weeks[weekOf(d)] || {}; return Object.keys(w.plan || {}).length > 0 || Object.keys(w.kantine_tag || {}).length > 0 || S.log.some(e => e.datum === d); };
@@ -129,7 +129,7 @@ VIEWS.koerper = VIEWS.trends = () => {
   <section class="card"><h2>Training</h2>
     <div class="kpis four">${wk4.map(m => `<div><span class="muted">ab ${short(m)}</span><b class="num">${S.trainings.filter(x => x.datum >= m && x.datum <= addDays(m, 6)).length}</b></div>`).join("")}</div>
     ${muscles()}</section>
-  ${tendonCard() ? `<section class="card"><h2>Achillessehne</h2>${tendonCard()}</section>` : ""}
+  ${tendonCard() ? `<section class="card"><h2>${esc(painLabel())}</h2>${tendonCard()}</section>` : ""}
   ${R !== 90 ? months(R) : ""}
   <p class="muted" style="text-align:center">Alle Ernährungswerte sind Schätzungen aus Plan und Einträgen.</p>`;
 };

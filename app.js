@@ -165,6 +165,7 @@ VIEWS.ziele = () => { const g = goals(), td = trainDays(), k = S.set.kantine || 
     <label>kcal Mo–Fr<input name="kcal" type="number" inputmode="numeric" value="${g.kcal_wt}" min="1000" max="5000"></label><label>kcal Sa & So<input name="kcal_we" type="number" inputmode="numeric" value="${g.kcal_we}" min="1000" max="6000"></label>
     <label>Eiweiß g pro Tag<input name="eiweiss" type="number" inputmode="numeric" value="${g.eiweiss}" min="40" max="300"></label><span></span>
     <fieldset class="days"><legend>Trainingstage</legend>${DAYS.map(([d, l]) => `<label class="check"><input type="checkbox" name="td" value="${d}" ${td.includes(d) ? "checked" : ""}>${l}</label>`).join("")}</fieldset>
+    <label style="grid-column:1/-1">Name für die Schmerz-Ampel<input name="painl" value="${esc(S.set.schmerz_label || "Sehne")}" maxlength="30"></label>
     <label>Kantine pauschal kcal<input name="kk" type="number" inputmode="numeric" value="${k.kcal}"></label><label>Kantine pauschal Eiweiß g<input name="kp" type="number" inputmode="numeric" value="${k.eiweiss}"></label></div></section>
   <section class="card"><h2>Für die Energiebilanz</h2><div class="grid2">
     <label>Geschlecht<select name="sex"><option value="m" ${p.geschlecht !== "w" ? "selected" : ""}>männlich</option><option value="w" ${p.geschlecht === "w" ? "selected" : ""}>weiblich</option></select></label>
@@ -365,8 +366,9 @@ document.addEventListener("submit", async e => {
     const akt = { wt: num("fwt") || 1.35, we: num("fwe") || 1.2, kraft: num("fkraft") || 200 };
     const gef = String(f.get("gef") || "").split("\n").map(l => l.trim().match(/^(.*?)\s+(\d+)\s*(ml)?$/)).filter(Boolean).map(m => ({ n: m[1], ml: +m[2] }));
     const supps = String(f.get("supps") || "").split("\n").map(l => l.trim()).filter(Boolean).map(l => { const [n, ...d] = l.split(/\s+-\s+/); return { n: n.trim(), dosis: d.join(" - ").trim() }; });
-    Object.assign(S.set, { ziel: v, trainingstage: td, kantine: k, profil: prof, aktivitaet: akt, gefaesse: gef, supps }); render();
-    await put("einstellungen", "upsert", [{ key: "ziel", value: v }, { key: "trainingstage", value: td }, { key: "kantine", value: k }, { key: "profil", value: prof }, { key: "aktivitaet", value: akt }, { key: "gefaesse", value: gef }, { key: "supps", value: supps }]); toast("Gespeichert"); }
+    const painl = String(f.get("painl") || "").trim() || "Sehne";
+    Object.assign(S.set, { schmerz_label: painl, ziel: v, trainingstage: td, kantine: k, profil: prof, aktivitaet: akt, gefaesse: gef, supps }); render();
+    await put("einstellungen", "upsert", [{ key: "ziel", value: v }, { key: "trainingstage", value: td }, { key: "kantine", value: k }, { key: "profil", value: prof }, { key: "aktivitaet", value: akt }, { key: "gefaesse", value: gef }, { key: "supps", value: supps }, { key: "schmerz_label", value: painl }]); toast("Gespeichert"); }
 });
 
 // ---------- Login ----------

@@ -159,6 +159,8 @@ export function series(key) { return S.vals.filter(v => v.quelle === "messung" &
 export function weights() { return S.vals.filter(v => v.quelle === "gewicht" && +v.werte?.kg > 0).map(v => ({ d: v.datum, kg: +v.werte.kg })).sort((a, b) => a.d.localeCompare(b.d)); }
 // Trendgewicht wie bei MacroFactor: geglätteter Verlauf, der Tagesschwankungen ausgleicht.
 export function trendWeights() { const w = weights(); let t = null; return w.map(x => { t = t == null ? x.kg : t + 0.15 * (x.kg - t); return { ...x, trend: t }; }); }
+// Bezeichnung für die Schmerz-Ampel (in den Einstellungen änderbar)
+export const painLabel = () => S.set.schmerz_label || "Sehne";
 export const e1rm = (kg, r) => (+kg || 0) * (1 + (+r || 0) / 30);
 
 // ---------- Private Bilder ----------
