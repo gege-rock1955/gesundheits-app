@@ -14,7 +14,7 @@ export function quests() {
     { id: "wasser", l: "2 Liter Wasser an 5 Tagen", n: days.filter(d => (+val(d, "wasser")?.ml || 0) >= 2000).length, z: 5 }];
   return q.map(x => ({ ...x, done: x.n >= x.z }));
 }
-export function streakChip() { const n = streak(); return n ? `<span class="chip gold" title="Tage am Stück mit Einträgen">${n} Tag${n > 1 ? "e" : ""} in Folge</span>` : ""; }
+export function streakChip() { const n = streak(); return n ? `<span class="chip gold streak-chip" title="Tage am Stück mit Einträgen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c1 3.5 5 5.8 5 10.5A5 5 0 0 1 7 12.5c0-2 1-3.4 2-4.4 0 1.6.8 2.9 2 3.4C11 8 10.6 4.6 12 2z"/></svg>${n} Tag${n > 1 ? "e" : ""} in Folge</span>` : ""; }
 
 function monthRecap(ym) {
   const t = todayISO(), first = ym + "-01", days = []; for (let d = first; d.startsWith(ym) && d <= t; d = addDays(d, 1)) days.push(d);
