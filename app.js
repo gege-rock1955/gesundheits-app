@@ -50,10 +50,7 @@ VIEWS.heute = () => {
   return `<section class="hero"><div class="row"><span class="muted" style="font-size:14px">${isToday ? dateLabel(d) : `<b>${esc(relLabel(d))}</b> · ${dateLabel(d, { day: "numeric", month: "long" })}`}</span>
       <span class="hero-nav"><button class="icon" data-act="shift" data-n="-1" aria-label="Vorheriger Tag"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>${isToday ? "" : `<button class="small ghost" data-act="day" data-date="${t}">Heute</button>`}<button class="icon" data-act="shift" data-n="1" aria-label="Nächster Tag"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>${gear}</span></div>
     <h2>${head}</h2><div class="strip" role="group" aria-label="Tage dieser Woche">${strip}</div></section>
-  <section class="card"><div class="meter"><div class="row"><b>Energie</b><span class="muted"><b class="v">${fmt(k)}</b> / ${fmt(g.kcal)} kcal</span></div>
-      <div class="track ${k > g.kcal ? "over" : ""}"><i style="width:${Math.min(100, k / g.kcal * 100)}%"></i></div></div>
-    <div class="meter"><div class="row"><b>Eiweiß</b><span class="muted"><b class="v">${fmt(p)}</b> / ${fmt(g.eiweiss)} g</span></div>
-      <div class="track ice"><i style="width:${Math.min(100, p / g.eiweiss * 100)}%"></i></div></div>
+  <section class="card">${rings(k, p, g)}
     ${(() => { let n = {}; tl.forEach(x => { n = addN(n, x.n || { kcal: x.k, eiweiss: x.p }); }); const g2 = (k, l, dd = 0) => `<span><b class="num">${n["_miss_" + k] && n[k] != null ? "≥" : ""}${n[k] == null ? "–" : fmt(n[k], dd)}</b> ${l}</span>`;
       return `<div class="minis">${g2("kh", "g KH")}${g2("zucker", "g Zucker")}${g2("fett", "g Fett")}${g2("salz", "g Salz", 1)}</div>`; })()}
     <div class="seg chips">${isToday ? streakChip() : ""}${todayBalanceChip(d)}${train ? `<span class="chip">Trainingstag</span>` : `<span class="chip">Ruhetag</span>`}
@@ -73,6 +70,18 @@ VIEWS.heute = () => {
   ${train && plan && isToday && !done ? `<section class="card"><div class="row"><h2>Training</h2><span class="muted">${esc(plan.name)}</span></div>
     <div class="seg">${plan.tage.map((x, i) => `<button data-act="start" data-i="${i}" data-plan="${esc(plan.id)}">${esc(x.name)}</button>`).join("")}</div></section>` : ""}`;
 };
+// Doppelring: außen Energie, innen Eiweiß. Mitte zeigt, was gegessen wurde.
+function rings(k, p, g) {
+  const arc = (r, v) => { const c = 2 * Math.PI * r; return `stroke-dasharray="${(Math.min(1, Math.max(0, v)) * c).toFixed(1)} ${c.toFixed(1)}"`; };
+  const over = k > g.kcal;
+  return `<div class="ring-row"><div class="rings"><svg viewBox="0 0 120 120" role="img" aria-label="Energie ${fmt(k)} von ${fmt(g.kcal)} kcal, Eiweiß ${fmt(p)} von ${fmt(g.eiweiss)} g">
+      <circle class="r-bg k" cx="60" cy="60" r="52"/><circle class="r-v k ${over ? "over" : ""}" cx="60" cy="60" r="52" ${arc(52, k / g.kcal)}/>
+      <circle class="r-bg p" cx="60" cy="60" r="38"/><circle class="r-v p" cx="60" cy="60" r="38" ${arc(38, p / g.eiweiss)}/></svg>
+    <span class="r-mid" aria-hidden="true"><b class="num">${fmt(k)}</b><small>kcal</small></span></div>
+    <div class="r-legend">
+      <div><span class="dot k ${over ? "over" : ""}"></span><span><b>Energie</b><span class="muted"><b class="v">${fmt(k)}</b> / ${fmt(g.kcal)} kcal</span></span></div>
+      <div><span class="dot p"></span><span><b>Eiweiß</b><span class="muted"><b class="v">${fmt(p)}</b> / ${fmt(g.eiweiss)} g</span></span></div></div></div>`;
+}
 ACT.day = t => { S.date = t.dataset.date; buzz(8); render(); };
 ACT.shift = t => shiftDay(+t.dataset.n);
 ACT["wasser-direkt"] = () => ACT.wasser();
@@ -320,6 +329,7 @@ document.addEventListener("change", async e => {
   e.target.value = "";
 });
 
+ACT.reload = () => location.reload();
 ACT.back = () => go(S.prev && S.prev !== S.view ? S.prev : "profil");
 ACT.logout = async () => { await sb.auth.signOut(); location.reload(); };
 
@@ -387,7 +397,7 @@ async function boot() {
   if (!data.session) return loginView();
   S.user = data.session.user; $("#tabs").hidden = false;
   if (DEMO && !$(".demo-bar")) { const b = document.createElement("div"); b.className = "demo-bar"; b.innerHTML = `Demo-Version · Daten nur in diesem Browser <button data-act="demo-reset-bar">Zurücksetzen</button>`; document.body.prepend(b); }
-  try { await loadAll(); } catch (e) { $("#view").innerHTML = `<div class="empty">Keine Verbindung zur Datenbank. <button class="ghost" onclick="location.reload()">Neu laden</button></div>`; status("Offline"); return; }
+  try { await loadAll(); } catch (e) { $("#view").innerHTML = `<div class="empty">Keine Verbindung zur Datenbank. <button class="ghost" data-act="reload">Neu laden</button></div>`; status("Offline"); return; }
   render();
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => { });
